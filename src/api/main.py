@@ -81,13 +81,49 @@ from .database import (
 import os
 from pydantic import BaseModel
 from langchain_core.prompts import PromptTemplate
+from langchain_core.chat_history import InMemoryChatMessageHistory
+from langchain_core.messages import HumanMessage, AIMessage
+
+# Memoria compatible con ConversationalRetrievalChain (sin depender de langchain_community.memory)
+class _ConversationBufferMemory:
+    def __init__(self, memory_key: str = "chat_history", return_messages: bool = True, output_key: str = "answer"):
+        self.memory_key = memory_key
+        self.return_messages = return_messages
+        self.output_key = output_key
+        self.chat_memory = InMemoryChatMessageHistory()
+
+    def load_memory_variables(self, inputs):
+        messages = self.chat_memory.messages
+        return {self.memory_key: messages if self.return_messages else self._messages_to_str(messages)}
+
+    def save_context(self, inputs, outputs):
+        question = inputs.get("question", inputs.get("input", ""))
+        answer = outputs.get(self.output_key, outputs.get("answer", outputs.get("output", "")))
+        if question:
+            self.chat_memory.add_user_message(question if isinstance(question, str) else str(question))
+        if answer:
+            self.chat_memory.add_ai_message(answer if isinstance(answer, str) else str(answer))
+
+    def _messages_to_str(self, messages):
+        parts = []
+        for m in messages:
+            role = "Human" if isinstance(m, HumanMessage) else "AI"
+            parts.append(f"{role}: {getattr(m, 'content', str(m))}")
+        return "\n".join(parts)
+
+    def clear(self):
+        self.chat_memory.clear()
+
 try:
     from langchain_community.memory.buffer import ConversationBufferMemory
 except ImportError:
     try:
         from langchain.memory import ConversationBufferMemory
     except ImportError:
-        from langchain_community.memory import ConversationBufferMemory
+        try:
+            from langchain_community.memory import ConversationBufferMemory
+        except ImportError:
+            ConversationBufferMemory = _ConversationBufferMemory
 try:
     from langchain_community.chains import ConversationalRetrievalChain
 except ImportError:
