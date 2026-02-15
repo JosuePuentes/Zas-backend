@@ -32,25 +32,24 @@ SECRET_KEY = os.getenv("SECRET_KEY")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
-# 🚨 INICIO DE LA CORRECCIÓN CORS 🚨
-# Lista de orígenes permitidos, ahora incluyendo tu nuevo dominio específico
-origins = [
-    "https://www.drocolven.com",  # Tu frontend nuevo
-    "https://drocolven.com",      # Versión sin 'www' (recomendado)
-    "https://frontend-drocolven.vercel.app",  # Tu frontend en Vercel
-    "http://localhost:3000",      # Si todavía lo usas para desarrollo local
-    # Puedes dejar ["*"] o añadir cualquier otro dominio que necesites aquí
+# CORS: un solo backend para varios frontends
+# Orígenes permitidos desde variable de entorno (separados por coma) o lista por defecto
+_default_origins = [
+    "https://www.drocolven.com",
+    "https://drocolven.com",
+    "https://frontend-drocolven.vercel.app",
+    "http://localhost:3000",
 ]
+_cors_env = os.getenv("CORS_ORIGINS", "").strip()
+origins = [o.strip() for o in _cors_env.split(",") if o.strip()] if _cors_env else _default_origins
 
-# Habilitar CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins, # <-- Usamos la lista de orígenes permitidos
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-# 🚨 FIN DE LA CORRECCIÓN CORS 🚨
 
 # Incluir routers segmentados
 app.include_router(clientes_router)
@@ -82,8 +81,17 @@ from .database import (
 import os
 from pydantic import BaseModel
 from langchain_core.prompts import PromptTemplate
-from langchain_community.memory import ConversationBufferMemory
-from langchain_community.chains import ConversationalRetrievalChain
+try:
+    from langchain_community.memory.buffer import ConversationBufferMemory
+except ImportError:
+    try:
+        from langchain.memory import ConversationBufferMemory
+    except ImportError:
+        from langchain_community.memory import ConversationBufferMemory
+try:
+    from langchain_community.chains import ConversationalRetrievalChain
+except ImportError:
+    from langchain.chains import ConversationalRetrievalChain
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_mongodb import MongoDBAtlasVectorSearch

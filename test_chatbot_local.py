@@ -19,9 +19,18 @@ def test_chatbot_locally():
     try:
         # Importar las dependencias necesarias
         print("1. Importando dependencias...")
-    from langchain_core.prompts import PromptTemplate
-    from langchain_community.memory import ConversationBufferMemory
-    from langchain_community.chains import ConversationalRetrievalChain
+        from langchain_core.prompts import PromptTemplate
+        try:
+            from langchain_community.memory.buffer import ConversationBufferMemory
+        except ImportError:
+            try:
+                from langchain.memory import ConversationBufferMemory
+            except ImportError:
+                from langchain_community.memory import ConversationBufferMemory
+        try:
+            from langchain_community.chains import ConversationalRetrievalChain
+        except ImportError:
+            from langchain.chains import ConversationalRetrievalChain
         from langchain_google_genai import ChatGoogleGenerativeAI
         from langchain_google_genai import GoogleGenerativeAIEmbeddings
         from langchain_mongodb import MongoDBAtlasVectorSearch
