@@ -1,0 +1,512 @@
+# Importa tu modelo Pydantic
+from bson import ObjectId
+
+# Endpoint para modificar un producto de inventario maestro
+from fastapi import Request, status
+
+from ..database import inventario_collection, db
+from typing import List, Optional
+# Endpoint para consultar inventario maestro
+from fastapi import APIRouter, HTTPException, UploadFile, File, Body
+from fastapi.responses import JSONResponse
+from ..database import inventario_collection, convenios_collection
+from ..models.models import ConvenioCarga, Convenio
+import math
+from fastapi.encoders import jsonable_encoder
+import pandas as pd
+from io import BytesIO
+from datetime import datetime
+import traceback
+import sys
+import os
+sys.path.append(os.path.join(os.path.dirname(__file__), '../../'))
+from utils.inventario_utils import calcular_precio_con_utilidad_40
+
+
+
+router = APIRouter()
+
+@router.get("/inventario/")
+async def obtener_inventario():
+    try:
+        # Buscar todos los productos en la colección INVENTARIO_MAESTRO
+        productos = list(inventario_collection.find({}))
+        
+        if not productos:
+            return JSONResponse(content={"message": "No se encontró inventario"}, status_code=404)
+        
+        # Procesar cada producto
+        inventario_list = []
+        for producto in productos:
+            producto["_id"] = str(producto["_id"])
+            
+            # Limpiar valores NaN e infinitos
+            for key, value in producto.items():
+                if isinstance(value, float) and (math.isnan(value) or math.isinf(value)):
+                    producto[key] = None
+                elif key == "precio" and isinstance(value, str):
+                    value = value.replace(",", ".")
+                    try:
+                        producto[key] = float(value)
+                    except ValueError:
+                        producto[key] = 0.0
+            
+            inventario_list.append(producto)
+        
+        return JSONResponse(content={"inventario": jsonable_encoder(inventario_list)})
+        
+    except Exception as e:
+        print(f"Error al obtener inventario: {e}")
+        return JSONResponse(content={"message": "Error interno del servidor"}, status_code=500)
+
+@router.get("/inventario_maestro/")
+async def obtener_inventario_maestro():
+    productos = list(db["INVENTARIO_MAESTRO"].find({}, {"codigo": 1, "descripcion": 1, "existencia": 1, "precio": 1, "dpto": 1, "nacional": 1, "laboratorio": 1, "fv": 1, "descuento1": 1, "descuento2": 1, "descuento3": 1}))
+    for prod in productos:
+        prod["_id"] = str(prod["_id"])
+        if 'fv' in prod:
+            valor_fv = prod['fv']
+            if isinstance(valor_fv, float) and math.isnan(valor_fv):
+                prod['fv'] = None
+    return JSONResponse(content={"inventario_maestro": productos})
+
+@router.post("/subir_inventario/")
+async def subir_inventario(file: UploadFile = File(...)):
+    if not file.filename.endswith(('.xlsx', '.xls')):
+        raise HTTPException(status_code=400, detail="El archivo debe ser un Excel (.xlsx o .xls)")
+    try:
+        contents = await file.read()
+        df = pd.read_excel(BytesIO(contents))
+
+        columnas_requeridas = ["codigo", "descripcion", "dpto", "nacional", "laboratorio", "f.v.", "existencia", "precio","descuento1","descuento2","descuento3"]
+        if not all(col in df.columns for col in columnas_requeridas):
+            raise HTTPException(status_code=400, detail="Faltan columnas requeridas.")
+
+        df = df.rename(columns={"f.v.": "fv"})
+
+        # Limpieza y transformación de datos
+        df["fv"] = pd.to_datetime(df["fv"], errors="coerce").dt.strftime('%d/%m/%Y')
+        df["codigo"] = df["codigo"].astype(str).str.strip()
+        
+        # Reemplaza NaN por None para compatibilidad con JSON/MongoDB
+        df = df.where(pd.notna(df), None)
+        
+        productos = df.to_dict(orient="records")
+
+        # --- INICIO DE CAMBIOS ---
+        # Aplicar utilidad del 40% a cada producto
+        for producto in productos:
+            precio_costo = producto.get("precio")
+            if precio_costo is not None:
+                try:
+                    # Convertir a float si es string
+                    if isinstance(precio_costo, str):
+                        precio_costo = float(precio_costo.replace(",", "."))
+                    elif isinstance(precio_costo, (int, float)):
+                        precio_costo = float(precio_costo)
+                    else:
+                        precio_costo = 0.0
+                    
+                    # Calcular precio con utilidad del 40%
+                    if precio_costo > 0:
+                        precio_venta = calcular_precio_con_utilidad_40(precio_costo)
+                        producto["precio"] = precio_venta
+                        producto["precio_costo"] = precio_costo  # Guardar precio de costo original
+                except (ValueError, TypeError):
+                    producto["precio"] = 0.0
+                    producto["precio_costo"] = 0.0
+
+        # 1. Borra el inventario anterior (esto se mantiene)
+        if productos: # Solo borrar si hay nuevos productos para cargar
+            inventario_collection.delete_many({})
+        else:
+            return {"message": "El archivo no contiene productos para cargar."}
+
+        # 2. Inserta cada producto como un documento individual
+        #    La variable 'productos' ya es una lista de diccionarios, perfecta para insert_many.
+        resultado = inventario_collection.insert_many(productos)
+
+        # --- FIN DE CAMBIOS ---
+
+        # 3. Actualiza el mensaje de éxito
+        num_insertados = len(resultado.inserted_ids)
+        return {"message": f"{num_insertados} productos cargados correctamente como documentos individuales."}
+        
+    except pd.errors.ParserError:
+        raise HTTPException(status_code=400, detail="Archivo Excel no válido o corrupto.")
+    except Exception as e:
+        print(f"Error inesperado: {e}")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Ocurrió un error inesperado en el servidor: {e}")
+
+
+@router.post("/convenios/cargar", tags=["Convenios"])
+async def cargar_convenio(convenio: ConvenioCarga):
+    """
+    Recibe los datos de un nuevo convenio y lo carga en la base de datos.
+    """
+    try:
+        # Convierte el modelo de Pydantic a un diccionario de Python
+        # para poder insertarlo en MongoDB.
+        datos_convenio = convenio.model_dump()
+
+        # Opcional: Añadir un campo con la fecha de carga del documento
+        datos_convenio["fecha_carga_utc"] = datetime.utcnow()
+
+        # Inserta el nuevo documento en la colección 'CONVENIOS'
+        resultado = convenios_collection.insert_one(datos_convenio)
+        
+        # Confirma que la inserción fue exitosa
+        if not resultado.acknowledged:
+            # Esta línea se ha revisado para asegurar que la cadena de texto esté completa y limpia.
+            raise HTTPException(status_code=500, detail="El convenio no pudo ser guardado en la base de datos.")
+
+        # Devuelve una respuesta de éxito
+        return JSONResponse(
+            status_code=201, # 201 Created es el código apropiado para un POST exitoso
+            content={
+                "message": "Convenio cargado exitosamente.",
+                "convenio_id": str(resultado.inserted_id)
+            }
+        )
+
+    except Exception as e:
+        print(f"Error inesperado al cargar convenio: {e}")
+        print(traceback.format_exc())
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Ocurrió un error inesperado en el servidor: {e}"
+        )
+
+
+@router.post("/subir_inventario2/")
+async def subir_inventario2(file: UploadFile = File(...)): # Se renombró la función para evitar duplicados
+    if not file.filename.endswith(('.xlsx', '.xls')):
+        raise HTTPException(status_code=400, detail="El archivo debe ser un Excel (.xlsx o .xls)")
+    try:
+        contents = await file.read()
+        df = pd.read_excel(BytesIO(contents))
+
+        columnas_requeridas = ["codigo", "descripcion", "dpto", "nacional", "laboratorio", "f.v.", "existencia", "precio","descuento1","descuento2","descuento3"]
+        if not all(col in df.columns for col in columnas_requeridas):
+            raise HTTPException(status_code=400, detail="Faltan columnas requeridas.")
+
+        df = df.rename(columns={
+            "codigo": "codigo",
+            "descripcion": "descripcion",
+            "dpto": "dpto",
+            "nacional": "nacional",
+            "laboratorio": "laboratorio",
+            "f.v.": "fv",
+            "existencia": "existencia",
+            "precio": "precio",
+            "descuento1": "descuento1",
+            "descuento2": "descuento2",
+            "descuento3": "descuento3",
+        })
+
+        df["fv"] = pd.to_datetime(df["fv"], errors="coerce").dt.strftime('%d/%m/%Y')
+        # df["cantidad"] = 0
+        # df["descuento1"] = 0
+        # df["descuento2"] = 0
+        df["codigo"] = df["codigo"].astype(str).str.strip()
+        productos = df.to_dict(orient="records")
+
+        fecha_subida = datetime.now().strftime("%d-%m-%Y")
+        nombre_productos = f"inventario_{fecha_subida}"
+        inventario1 = {"nombre_productos":nombre_productos, "inventario": productos}
+
+        inventario_collection.delete_many({})
+        inventario_collection.insert_one(inventario1)
+
+        return {"message": f"{len(productos)} productos cargados correctamente dentro de {nombre_productos}."}
+    except pd.errors.ClosedFileError:
+        raise HTTPException(status_code=400, detail="Archivo Excel no válido.")
+    except Exception as e:
+        print(f"Error inesperado: {e}")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Endpoint para obtener un producto completo de inventario maestro por ObjectId
+@router.get("/inventario_maestro/{id}")
+async def obtener_producto_maestro(id: str):
+    prod = db["INVENTARIO_MAESTRO"].find_one({"_id": ObjectId(id)})
+    if not prod:
+        raise HTTPException(status_code=404, detail="Producto no encontrado")
+    prod["_id"] = str(prod["_id"])
+    return JSONResponse(content={"producto": prod})
+
+@router.put("/inventario_maestro/{id}")
+async def modificar_inventario_maestro(id: str, body: dict = Body(...)):
+    campos_permitidos = {"codigo", "descripcion", "existencia", "precio", "dpto", "nacional", "laboratorio", "fv", "descuento1", "descuento2", "descuento3"}
+    update_data = {k: v for k, v in body.items() if k in campos_permitidos}
+    result = db["INVENTARIO_MAESTRO"].update_one({"_id": ObjectId(id)}, {"$set": update_data})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Producto no encontrado")
+    return {"message": "Producto actualizado", "id": id, "updated_fields": update_data}
+
+@router.get(
+    "/convenios", 
+    response_model=List[Convenio], 
+    summary="Obtener todos los convenios"
+)
+async def get_all_convenios():
+    """
+    Obtiene una lista de todos los convenios almacenados en la base de datos.
+    El modelo de respuesta se encarga de la correcta serialización.
+    """
+    try:
+        convenios_list = list(convenios_collection.find({}))
+        # Simplemente retornas la lista, FastAPI y Pydantic hacen el resto.
+        return convenios_list
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Ocurrió un error al consultar los convenios: {e}"
+        )
+
+
+# ===============================================
+# ENDPOINTS CON UTILIDAD DEL 40% Y DESCUENTO DE INVENTARIO
+# ===============================================
+
+@router.post("/inventarios/upload-excel")
+async def upload_excel_inventario(file: UploadFile = File(...)):
+    """
+    Endpoint para subir inventario desde Excel con aplicación automática de utilidad del 40%.
+    Este endpoint es un alias de /subir_inventario/ con la misma funcionalidad.
+    """
+    return await subir_inventario(file)
+
+
+@router.post("/inventarios/cargar-existencia")
+async def cargar_existencia_inventario(body: dict = Body(...)):
+    """
+    Endpoint para cargar existencia de productos en inventario.
+    Aplica utilidad del 40% al precio si se proporciona precio_costo.
+    
+    Body esperado:
+    {
+        "productos": [
+            {
+                "codigo": "string",
+                "existencia": int,
+                "precio_costo": float (opcional),
+                "precio": float (opcional, se calculará si se proporciona precio_costo)
+            }
+        ]
+    }
+    """
+    try:
+        productos = body.get("productos", [])
+        
+        if not productos:
+            raise HTTPException(status_code=400, detail="No se proporcionaron productos")
+        
+        resultados = []
+        productos_actualizados = []
+        
+        for producto_data in productos:
+            codigo = producto_data.get("codigo")
+            existencia = producto_data.get("existencia")
+            precio_costo = producto_data.get("precio_costo")
+            precio = producto_data.get("precio")
+            
+            if not codigo:
+                resultados.append({
+                    "codigo": codigo,
+                    "error": "Código de producto requerido"
+                })
+                continue
+            
+            # Buscar producto existente
+            producto = db["INVENTARIO_MAESTRO"].find_one({"codigo": str(codigo)})
+            
+            if not producto:
+                resultados.append({
+                    "codigo": codigo,
+                    "error": "Producto no encontrado"
+                })
+                continue
+            
+            # Actualizar existencia
+            update_data = {}
+            if existencia is not None:
+                update_data["existencia"] = int(existencia)
+            
+            # Calcular precio con utilidad del 40% si se proporciona precio_costo
+            if precio_costo is not None:
+                try:
+                    precio_costo_float = float(precio_costo)
+                    if precio_costo_float > 0:
+                        precio_calculado = calcular_precio_con_utilidad_40(precio_costo_float)
+                        update_data["precio"] = precio_calculado
+                        update_data["precio_costo"] = precio_costo_float
+                except (ValueError, TypeError):
+                    resultados.append({
+                        "codigo": codigo,
+                        "error": "Precio de costo inválido"
+                    })
+                    continue
+            elif precio is not None:
+                # Si se proporciona precio directamente, usarlo
+                try:
+                    update_data["precio"] = float(precio)
+                except (ValueError, TypeError):
+                    resultados.append({
+                        "codigo": codigo,
+                        "error": "Precio inválido"
+                    })
+                    continue
+            
+            if update_data:
+                db["INVENTARIO_MAESTRO"].update_one(
+                    {"codigo": str(codigo)},
+                    {"$set": update_data}
+                )
+                productos_actualizados.append({
+                    "codigo": codigo,
+                    "actualizado": True,
+                    "campos": list(update_data.keys())
+                })
+            else:
+                resultados.append({
+                    "codigo": codigo,
+                    "error": "No se proporcionaron datos para actualizar"
+                })
+        
+        return {
+            "message": f"Procesados {len(productos)} productos",
+            "actualizados": len(productos_actualizados),
+            "detalles": productos_actualizados,
+            "errores": [r for r in resultados if "error" in r]
+        }
+        
+    except Exception as e:
+        print(f"Error al cargar existencia: {e}")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Error interno del servidor: {e}")
+
+
+@router.post("/inventarios/{inventario_id}/items")
+async def agregar_items_inventario(inventario_id: str, body: dict = Body(...)):
+    """
+    Endpoint para agregar items a un inventario específico.
+    Aplica utilidad del 40% al precio si se proporciona precio_costo.
+    
+    Body esperado:
+    {
+        "items": [
+            {
+                "codigo": "string",
+                "descripcion": "string",
+                "existencia": int,
+                "precio_costo": float (opcional),
+                "precio": float (opcional),
+                "dpto": "string" (opcional),
+                "nacional": "string" (opcional),
+                "laboratorio": "string" (opcional),
+                "fv": "string" (opcional),
+                "descuento1": float (opcional),
+                "descuento2": float (opcional),
+                "descuento3": float (opcional)
+            }
+        ]
+    }
+    """
+    try:
+        items = body.get("items", [])
+        
+        if not items:
+            raise HTTPException(status_code=400, detail="No se proporcionaron items")
+        
+        resultados = []
+        items_insertados = []
+        
+        for item_data in items:
+            codigo = item_data.get("codigo")
+            if not codigo:
+                resultados.append({
+                    "codigo": None,
+                    "error": "Código de producto requerido"
+                })
+                continue
+            
+            # Preparar datos del producto
+            producto = {
+                "codigo": str(codigo),
+                "descripcion": item_data.get("descripcion", ""),
+                "existencia": int(item_data.get("existencia", 0)),
+                "dpto": item_data.get("dpto", ""),
+                "nacional": item_data.get("nacional", ""),
+                "laboratorio": item_data.get("laboratorio", ""),
+                "fv": item_data.get("fv", ""),
+                "descuento1": item_data.get("descuento1", 0.0),
+                "descuento2": item_data.get("descuento2", 0.0),
+                "descuento3": item_data.get("descuento3", 0.0),
+            }
+            
+            # Calcular precio con utilidad del 40% si se proporciona precio_costo
+            precio_costo = item_data.get("precio_costo")
+            precio = item_data.get("precio")
+            
+            if precio_costo is not None:
+                try:
+                    precio_costo_float = float(precio_costo)
+                    if precio_costo_float > 0:
+                        precio_calculado = calcular_precio_con_utilidad_40(precio_costo_float)
+                        producto["precio"] = precio_calculado
+                        producto["precio_costo"] = precio_costo_float
+                    else:
+                        producto["precio"] = 0.0
+                        producto["precio_costo"] = 0.0
+                except (ValueError, TypeError):
+                    resultados.append({
+                        "codigo": codigo,
+                        "error": "Precio de costo inválido"
+                    })
+                    continue
+            elif precio is not None:
+                try:
+                    producto["precio"] = float(precio)
+                except (ValueError, TypeError):
+                    resultados.append({
+                        "codigo": codigo,
+                        "error": "Precio inválido"
+                    })
+                    continue
+            else:
+                producto["precio"] = 0.0
+            
+            # Verificar si el producto ya existe
+            producto_existente = db["INVENTARIO_MAESTRO"].find_one({"codigo": str(codigo)})
+            
+            if producto_existente:
+                # Actualizar producto existente
+                db["INVENTARIO_MAESTRO"].update_one(
+                    {"codigo": str(codigo)},
+                    {"$set": producto}
+                )
+                items_insertados.append({
+                    "codigo": codigo,
+                    "accion": "actualizado"
+                })
+            else:
+                # Insertar nuevo producto
+                db["INVENTARIO_MAESTRO"].insert_one(producto)
+                items_insertados.append({
+                    "codigo": codigo,
+                    "accion": "insertado"
+                })
+        
+        return {
+            "message": f"Procesados {len(items)} items",
+            "items_procesados": len(items_insertados),
+            "detalles": items_insertados,
+            "errores": [r for r in resultados if "error" in r]
+        }
+        
+    except Exception as e:
+        print(f"Error al agregar items: {e}")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Error interno del servidor: {e}")

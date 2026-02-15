@@ -1,0 +1,16 @@
+# Configuración de variables de entorno para DROCOLVEN
+# Copia este contenido a un archivo llamado .env en la raíz del proyecto
+
+# MongoDB
+MONGO_URI=mongodb+srv://master:go3DjrOJmczPNDNNz@cluster0.t4ykike.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0
+
+# JWT Secret
+SECRET_KEY=droclven_secret_key_2024_secure_jwt_token_for_authentication
+
+# Google Gemini AI - REEMPLAZA CON TU CLAVE REAL
+GOOGLE_API_KEY=tu_clave_api_de_google_aqui
+
+# Configuración de Vector Search (opcional)
+DB_NAME=DROCOLVEN
+COLLECTION_NAME=CLIENTES
+VECTOR_INDEX_NAME=vector_index

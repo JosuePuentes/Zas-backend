@@ -1,0 +1,6 @@
+# Configuración de variables de entorno para DROCOLVEN
+# Copia este contenido a un archivo llamado .env en la raíz del proyecto
+
+MONGO_URI=mongodb+srv://master:go3DjrOJmczPNDNNz@cluster0.t4ykike.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0
+SECRET_KEY=droclven_secret_key_2024_secure_jwt_token_for_authentication
+

@@ -1,0 +1,117 @@
+# Creado por https://www.toptal.com/developers/gitignore/api/python
+
+# ===============================================
+# Archivos específicos del entorno de desarrollo
+# ===============================================
+
+# Entornos virtuales
+# Ignora las carpetas de entornos virtuales comunes.
+# Si usas venv, pipenv, o poetry, estas carpetas contendrán
+# las librerías de tu proyecto y no deben ser versionadas.
+venv/
+.venv/
+env/
+.env/
+
+# Directorios de Pyenv
+# Directorios de instalación de Pyenv (si lo usas).
+.python-version
+
+# Archivos de caché del intérprete (Pyc, Pyo, Pyd)
+# Archivos compilados que Python genera para acelerar la ejecución.
+__pycache__/
+*.pyc
+*.pyd
+*.pyo
+
+
+# Archivos de configuración de PyCharm
+# Directorios y archivos generados por el IDE PyCharm.
+.idea/
+*.iml
+.vscode/
+
+# Archivos de caché de pytest
+# Caché de pruebas generada por pytest.
+.pytest_cache/
+
+# Caché de Mypy (type checker)
+.mypy_cache/
+
+# ===============================================
+# Archivos de sistema operativo y editores
+# ===============================================
+
+# Archivos temporales de macOS
+.DS_Store
+
+# Archivos temporales de Windows
+Thumbs.db
+
+# Archivos temporales de editores de texto (ej. Vim, Emacs)
+*~
+*.swp
+.fuse_hidden*
+
+# ===============================================
+# Archivos de distribución y compilación
+# ===============================================
+
+# Construcción de dist-packages, wheels, eggs
+# Carpetas y archivos generados al empaquetar tu aplicación Python.
+dist/
+build/
+*.egg-info/
+.eggs/
+wheels/
+htmlcov/
+.nox/
+
+# ===============================================
+# Archivos de datos y bases de datos locales
+# ===============================================
+
+# Bases de datos SQLite3
+# Si usas SQLite localmente (ej. en Django), no querrás versionar la DB.
+# Asegúrate de no ignorarla si la DB es parte de tus tests iniciales o fixtures.
+*.db
+*.sqlite3
+
+# Archivos generados por Jupyter Notebook
+.ipynb_checkpoints/
+
+# Archivos de log
+*.log
+
+# ===============================================
+# Variables de entorno y credenciales sensibles
+# ===============================================
+
+# Archivos .env
+# Archivos que contienen variables de entorno (claves API, credenciales DB).
+# NUNCA deben subirse a Git por seguridad.
+.env
+
+# Archivos de claves SSH (si se usan localmente y por error se añaden)
+*.pem
+*.key
+
+# ===============================================
+# Archivos de datos generados por tu aplicación (opcional)
+# ===============================================
+
+# Si tu aplicación genera archivos de salida, CSVs, PDFs, etc.
+# que no deben estar en el control de versiones.
+# /output/
+# /data/processed/
+# /uploads/
+
+# ===============================================
+# Otros
+# ===============================================
+
+# Archivos de VS Code (settings locales)
+.vscode/settings.json
+
+# Archivos de caché de ESLint
+.eslintcache
