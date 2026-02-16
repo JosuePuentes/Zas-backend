@@ -126,8 +126,18 @@ except ImportError:
             ConversationBufferMemory = _ConversationBufferMemory
 try:
     from langchain_community.chains import ConversationalRetrievalChain
+    _USE_NATIVE_CHAIN = True
 except ImportError:
-    from langchain.chains import ConversationalRetrievalChain
+    try:
+        from langchain_community.chains.conversational_retrieval.base import ConversationalRetrievalChain
+        _USE_NATIVE_CHAIN = True
+    except ImportError:
+        try:
+            from langchain.chains import ConversationalRetrievalChain
+            _USE_NATIVE_CHAIN = True
+        except ImportError:
+            ConversationalRetrievalChain = None
+            _USE_NATIVE_CHAIN = False
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_mongodb import MongoDBAtlasVectorSearch
@@ -198,35 +208,46 @@ memory = ConversationBufferMemory(
     output_key='answer'
 )
 
-# --- 7. Crea la "Cadena" (Chain) que une todo ---
-chain = ConversationalRetrievalChain.from_llm(
-    llm=llm,
-    retriever=vector_store.as_retriever(
-        search_type="similarity_score_threshold",
-        search_kwargs={
-            'k': 5, 
-            'score_threshold': 0.7
-        }
-    ),
-    memory=memory,
-    combine_docs_chain_kwargs={
-        "prompt": PromptTemplate.from_template(prompt_template)
-    },
-    rephrase_question=False
+# --- 7. Retriever y prompt (siempre) ---
+retriever = vector_store.as_retriever(
+    search_type="similarity_score_threshold",
+    search_kwargs={"k": 5, "score_threshold": 0.7}
 )
+prompt = PromptTemplate.from_template(prompt_template)
+
+# --- 8. Chain nativo o None (flujo manual en el endpoint) ---
+if _USE_NATIVE_CHAIN:
+    chain = ConversationalRetrievalChain.from_llm(
+        llm=llm,
+        retriever=retriever,
+        memory=memory,
+        combine_docs_chain_kwargs={"prompt": prompt},
+        rephrase_question=False
+    )
+else:
+    chain = None
 
 # --- El Endpoint de la API ---
 class ChatRequest(BaseModel):
     prompt: str
 
-@app.post("/api/chat") # ¡Importante! Asegúrate de que tu app de FastAPI se llame 'app'
+def _chat_with_retrieval(question: str) -> str:
+    """Flujo manual: retriever + prompt + LLM (sin ConversationalRetrievalChain)."""
+    docs = retriever.invoke(question)
+    context = "\n\n".join(doc.page_content for doc in docs) if docs else ""
+    formatted = prompt.invoke({"context": context, "question": question})
+    answer = llm.invoke(formatted)
+    answer_text = answer.content if hasattr(answer, "content") else str(answer)
+    memory.save_context({"question": question}, {"answer": answer_text})
+    return answer_text
+
+@app.post("/api/chat")
 async def chat_endpoint(request: ChatRequest):
     try:
-        # Aquí ocurre la magia:
-        response = chain.invoke({"question": request.prompt})
-        
-        return {"response": response['answer']}
-
+        if chain is not None:
+            response = chain.invoke({"question": request.prompt})
+            return {"response": response["answer"]}
+        return {"response": _chat_with_retrieval(request.prompt)}
     except Exception as e:
         print(f"Error en el endpoint de chat: {e}")
         return {"response": f"Hubo un error al procesar tu solicitud: {e}"}
