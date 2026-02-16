@@ -38,6 +38,7 @@ _default_origins = [
     "https://www.drocolven.com",
     "https://drocolven.com",
     "https://frontend-drocolven.vercel.app",
+    "https://virgen-del-carmen-frontend.vercel.app",
     "http://localhost:3000",
 ]
 _cors_env = os.getenv("CORS_ORIGINS", "").strip()

@@ -18,4 +18,4 @@ VECTOR_INDEX_NAME=vector_index
 # CORS: varios frontends contra este backend (URLs separadas por coma, sin espacios extra)
 # Ejemplo: https://app1.com,https://app2.com,http://localhost:3000
 # Si no se define, se usan los orígenes por defecto (drocolven, Vercel, localhost).
-# CORS_ORIGINS=https://tudominio.com,https://otro-frontend.vercel.app,http://localhost:3000
+# CORS_ORIGINS=https://tudominio.com,https://virgen-del-carmen-frontend.vercel.app,http://localhost:3000
