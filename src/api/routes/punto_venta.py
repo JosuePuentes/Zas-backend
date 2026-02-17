@@ -2,16 +2,17 @@
 Rutas para punto de venta
 Incluye endpoint para registrar ventas con descuento automático de inventario
 """
-from fastapi import APIRouter, HTTPException, Body
+from fastapi import APIRouter, HTTPException, Body, Depends
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from pymongo.database import Database
 from typing import List, Optional, Dict
 from datetime import datetime
 from bson import ObjectId
 from pymongo.errors import OperationFailure
 import traceback
 
-from ..database import db, ventas_collection, client as mongo_client
+from ..database import get_db, client as mongo_client
 import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '../../'))
@@ -43,7 +44,7 @@ class VentaRequest(BaseModel):
 
 
 @router.post("/punto-venta/ventas")
-async def registrar_venta(venta: VentaRequest):
+async def registrar_venta(venta: VentaRequest, db: Database = Depends(get_db)):
     """
     Endpoint para registrar una venta y descontar automáticamente el inventario.
     
@@ -61,6 +62,7 @@ async def registrar_venta(venta: VentaRequest):
         Información de la venta registrada y productos procesados
     """
     try:
+        ventas_collection = db["VENTAS"]
         # Validar que hay productos
         if not venta.productos or len(venta.productos) == 0:
             raise HTTPException(status_code=400, detail="La venta debe incluir al menos un producto")
@@ -233,12 +235,14 @@ async def obtener_ventas(
     fecha_desde: Optional[str] = None,
     fecha_hasta: Optional[str] = None,
     usuario: Optional[str] = None,
-    cliente_rif: Optional[str] = None
+    cliente_rif: Optional[str] = None,
+    db: Database = Depends(get_db),
 ):
     """
     Endpoint para obtener ventas con filtros opcionales.
     """
     try:
+        ventas_collection = db["VENTAS"]
         query = {}
         
         if fecha_desde or fecha_hasta:
@@ -270,11 +274,12 @@ async def obtener_ventas(
 
 
 @router.get("/punto-venta/ventas/{venta_id}")
-async def obtener_venta_por_id(venta_id: str):
+async def obtener_venta_por_id(venta_id: str, db: Database = Depends(get_db)):
     """
     Endpoint para obtener una venta específica por ID.
     """
     try:
+        ventas_collection = db["VENTAS"]
         venta = ventas_collection.find_one({"_id": ObjectId(venta_id)})
         
         if not venta:

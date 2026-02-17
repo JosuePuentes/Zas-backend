@@ -1,12 +1,14 @@
-from fastapi import APIRouter, HTTPException, Body
-from ..database import db, usuarios_admin_collection, clients_collection
+from fastapi import APIRouter, HTTPException, Body, Depends
+from pymongo.database import Database
+from ..database import get_db
 from ..auth.auth_utils import get_password_hash, verify_password, create_access_token, create_admin_access_token
 from ..models.models import UserRegister, UserLogin, UserAdminRegister, AdminLogin, Client, UserAdmin
 
 router = APIRouter()
 
 @router.post("/register/")
-async def register(client: Client):
+async def register(client: Client, db: Database = Depends(get_db)):
+    clients_collection = db["CLIENTES"]
     if clients_collection.find_one({"email": client.email}):
         raise HTTPException(status_code=400, detail="Correo ya registrado")
     hashed_password = get_password_hash(client.password)
@@ -18,7 +20,8 @@ async def register(client: Client):
     raise HTTPException(status_code=500, detail="Error al registrar el cliente")
 
 @router.post("/login/")
-async def login(user: UserLogin):
+async def login(user: UserLogin, db: Database = Depends(get_db)):
+    clients_collection = db["CLIENTES"]
     db_client = clients_collection.find_one({"email": user.email})
     if not db_client:
         raise HTTPException(status_code=401, detail="Cliente no encontrado")
@@ -36,7 +39,8 @@ async def login(user: UserLogin):
     }
 
 @router.post("/register/admin/")
-async def register_admin(user: UserAdminRegister):
+async def register_admin(user: UserAdminRegister, db: Database = Depends(get_db)):
+    usuarios_admin_collection = db["usuarios_admin"]
     if usuarios_admin_collection.find_one({"usuario": user.usuario}):
         raise HTTPException(status_code=400, detail="Usuario ya registrado")
     hashed_password = get_password_hash(user.password)
@@ -48,7 +52,8 @@ async def register_admin(user: UserAdminRegister):
     raise HTTPException(status_code=500, detail="Error al registrar el usuario administrativo")
 
 @router.post("/login/admin/")
-async def admin_login(admin: AdminLogin):
+async def admin_login(admin: AdminLogin, db: Database = Depends(get_db)):
+    usuarios_admin_collection = db["usuarios_admin"]
     db_admin = usuarios_admin_collection.find_one({"usuario": admin.usuario})
     if not db_admin:
         raise HTTPException(status_code=401, detail="Usuario no encontrado")
@@ -63,7 +68,8 @@ async def admin_login(admin: AdminLogin):
     }
 
 @router.put("/admin/usuarios/{usuario}")
-async def update_admin_user(usuario: str, update: UserAdmin):
+async def update_admin_user(usuario: str, update: UserAdmin, db: Database = Depends(get_db)):
+    usuarios_admin_collection = db["usuarios_admin"]
     existing_user = usuarios_admin_collection.find_one({"usuario": usuario})
     if not existing_user:
         raise HTTPException(status_code=404, detail="Usuario administrativo no encontrado")

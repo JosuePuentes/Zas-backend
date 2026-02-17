@@ -1,8 +1,9 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
+from pymongo.database import Database
 from typing import List, Optional
 from ..models.models import KardexMovimiento, TipoMovimiento, ProductoInventario
-from ..database import db
+from ..database import get_db
 import datetime
 
 class AnularTransaccionRequest(BaseModel):
@@ -23,7 +24,7 @@ class TransaccionRequest(BaseModel):
     productos: List[ProductoTransaccion]
 
 @router.post("/transaccion")
-def registrar_transaccion(request: TransaccionRequest):
+def registrar_transaccion(request: TransaccionRequest, db: Database = Depends(get_db)):
     movimiento_doc = {
         "fecha": datetime.datetime.now().isoformat(),
         "usuario": request.usuario,
@@ -89,7 +90,7 @@ def registrar_transaccion(request: TransaccionRequest):
 
 
 @router.post("/anular-transaccion")
-def anular_transaccion(request: AnularTransaccionRequest):
+def anular_transaccion(request: AnularTransaccionRequest, db: Database = Depends(get_db)):
     kardex_movimientos = list(db["KARDEX"].find({"movimiento_id": request.movimiento_id, "estado": "activo"}))
     if not kardex_movimientos:
         raise HTTPException(status_code=404, detail="No se encontraron movimientos activos para el ID proporcionado.")

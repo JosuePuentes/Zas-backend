@@ -2,14 +2,13 @@
 from bson import ObjectId
 
 # Endpoint para modificar un producto de inventario maestro
-from fastapi import Request, status
-
-from ..database import inventario_collection, db
+from fastapi import Request, status, Depends
+from pymongo.database import Database
+from ..database import get_db
 from typing import List, Optional
 # Endpoint para consultar inventario maestro
 from fastapi import APIRouter, HTTPException, UploadFile, File, Body
 from fastapi.responses import JSONResponse
-from ..database import inventario_collection, convenios_collection
 from ..models.models import ConvenioCarga, Convenio
 import math
 from fastapi.encoders import jsonable_encoder
@@ -27,8 +26,9 @@ from utils.inventario_utils import calcular_precio_con_utilidad_40
 router = APIRouter()
 
 @router.get("/inventario/")
-async def obtener_inventario():
+async def obtener_inventario(db: Database = Depends(get_db)):
     try:
+        inventario_collection = db["INVENTARIO_MAESTRO"]
         # Buscar todos los productos en la colección INVENTARIO_MAESTRO
         productos = list(inventario_collection.find({}))
         
@@ -60,7 +60,7 @@ async def obtener_inventario():
         return JSONResponse(content={"message": "Error interno del servidor"}, status_code=500)
 
 @router.get("/inventario_maestro/")
-async def obtener_inventario_maestro():
+async def obtener_inventario_maestro(db: Database = Depends(get_db)):
     productos = list(db["INVENTARIO_MAESTRO"].find({}, {"codigo": 1, "descripcion": 1, "existencia": 1, "precio": 1, "dpto": 1, "nacional": 1, "laboratorio": 1, "fv": 1, "descuento1": 1, "descuento2": 1, "descuento3": 1}))
     for prod in productos:
         prod["_id"] = str(prod["_id"])
@@ -71,10 +71,11 @@ async def obtener_inventario_maestro():
     return JSONResponse(content={"inventario_maestro": productos})
 
 @router.post("/subir_inventario/")
-async def subir_inventario(file: UploadFile = File(...)):
+async def subir_inventario(file: UploadFile = File(...), db: Database = Depends(get_db)):
     if not file.filename.endswith(('.xlsx', '.xls')):
         raise HTTPException(status_code=400, detail="El archivo debe ser un Excel (.xlsx o .xls)")
     try:
+        inventario_collection = db["INVENTARIO_MAESTRO"]
         contents = await file.read()
         df = pd.read_excel(BytesIO(contents))
 
@@ -141,11 +142,12 @@ async def subir_inventario(file: UploadFile = File(...)):
 
 
 @router.post("/convenios/cargar", tags=["Convenios"])
-async def cargar_convenio(convenio: ConvenioCarga):
+async def cargar_convenio(convenio: ConvenioCarga, db: Database = Depends(get_db)):
     """
     Recibe los datos de un nuevo convenio y lo carga en la base de datos.
     """
     try:
+        convenios_collection = db["CONVENIOS"]
         # Convierte el modelo de Pydantic a un diccionario de Python
         # para poder insertarlo en MongoDB.
         datos_convenio = convenio.model_dump()
@@ -180,10 +182,11 @@ async def cargar_convenio(convenio: ConvenioCarga):
 
 
 @router.post("/subir_inventario2/")
-async def subir_inventario2(file: UploadFile = File(...)): # Se renombró la función para evitar duplicados
+async def subir_inventario2(file: UploadFile = File(...), db: Database = Depends(get_db)): # Se renombró la función para evitar duplicados
     if not file.filename.endswith(('.xlsx', '.xls')):
         raise HTTPException(status_code=400, detail="El archivo debe ser un Excel (.xlsx o .xls)")
     try:
+        inventario_collection = db["INVENTARIO_MAESTRO"]
         contents = await file.read()
         df = pd.read_excel(BytesIO(contents))
 
@@ -229,7 +232,7 @@ async def subir_inventario2(file: UploadFile = File(...)): # Se renombró la fun
 
 # Endpoint para obtener un producto completo de inventario maestro por ObjectId
 @router.get("/inventario_maestro/{id}")
-async def obtener_producto_maestro(id: str):
+async def obtener_producto_maestro(id: str, db: Database = Depends(get_db)):
     prod = db["INVENTARIO_MAESTRO"].find_one({"_id": ObjectId(id)})
     if not prod:
         raise HTTPException(status_code=404, detail="Producto no encontrado")
@@ -237,7 +240,7 @@ async def obtener_producto_maestro(id: str):
     return JSONResponse(content={"producto": prod})
 
 @router.put("/inventario_maestro/{id}")
-async def modificar_inventario_maestro(id: str, body: dict = Body(...)):
+async def modificar_inventario_maestro(id: str, body: dict = Body(...), db: Database = Depends(get_db)):
     campos_permitidos = {"codigo", "descripcion", "existencia", "precio", "dpto", "nacional", "laboratorio", "fv", "descuento1", "descuento2", "descuento3"}
     update_data = {k: v for k, v in body.items() if k in campos_permitidos}
     result = db["INVENTARIO_MAESTRO"].update_one({"_id": ObjectId(id)}, {"$set": update_data})
@@ -250,12 +253,13 @@ async def modificar_inventario_maestro(id: str, body: dict = Body(...)):
     response_model=List[Convenio], 
     summary="Obtener todos los convenios"
 )
-async def get_all_convenios():
+async def get_all_convenios(db: Database = Depends(get_db)):
     """
     Obtiene una lista de todos los convenios almacenados en la base de datos.
     El modelo de respuesta se encarga de la correcta serialización.
     """
     try:
+        convenios_collection = db["CONVENIOS"]
         convenios_list = list(convenios_collection.find({}))
         # Simplemente retornas la lista, FastAPI y Pydantic hacen el resto.
         return convenios_list
@@ -271,16 +275,16 @@ async def get_all_convenios():
 # ===============================================
 
 @router.post("/inventarios/upload-excel")
-async def upload_excel_inventario(file: UploadFile = File(...)):
+async def upload_excel_inventario(file: UploadFile = File(...), db: Database = Depends(get_db)):
     """
     Endpoint para subir inventario desde Excel con aplicación automática de utilidad del 40%.
     Este endpoint es un alias de /subir_inventario/ con la misma funcionalidad.
     """
-    return await subir_inventario(file)
+    return await subir_inventario(file, db)
 
 
 @router.post("/inventarios/cargar-existencia")
-async def cargar_existencia_inventario(body: dict = Body(...)):
+async def cargar_existencia_inventario(body: dict = Body(...), db: Database = Depends(get_db)):
     """
     Endpoint para cargar existencia de productos en inventario.
     Aplica utilidad del 40% al precio si se proporciona precio_costo.
@@ -389,7 +393,7 @@ async def cargar_existencia_inventario(body: dict = Body(...)):
 
 
 @router.post("/inventarios/{inventario_id}/items")
-async def agregar_items_inventario(inventario_id: str, body: dict = Body(...)):
+async def agregar_items_inventario(inventario_id: str, body: dict = Body(...), db: Database = Depends(get_db)):
     """
     Endpoint para agregar items a un inventario específico.
     Aplica utilidad del 40% al precio si se proporciona precio_costo.

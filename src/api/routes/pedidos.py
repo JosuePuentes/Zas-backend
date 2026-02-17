@@ -1,8 +1,9 @@
-from fastapi import APIRouter, HTTPException, Body, Path, Query
+from fastapi import APIRouter, HTTPException, Body, Path, Query, Depends
 from fastapi.responses import JSONResponse
 from bson import ObjectId
 from bson.errors import InvalidId
-from ..database import db, pedidos_collection
+from pymongo.database import Database
+from ..database import get_db
 from ..models.models import PedidoResumen, PedidoArmado, EstadoPedido, CantidadesEncontradas, PickingInfo, PackingInfo, EnvioInfo, FacturacionInfo, ValidacionPedido, CheckPickingData, ActualizarEstadoPedido, FinalizarCheckPicking
 from datetime import datetime
 from fastapi.encoders import jsonable_encoder
@@ -25,8 +26,9 @@ ESTADOS_PEDIDO = [
 ]
 
 @router.post("/pedidos/")
-async def registrar_pedido(resumen: PedidoResumen):
+async def registrar_pedido(resumen: PedidoResumen, db: Database = Depends(get_db)):
     try:
+        pedidos_collection = db["PEDIDOS"]
         pedido = resumen.dict()
         pedido["fecha"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         # Solo asignar 'nuevo' si no viene estado en el resumen
@@ -44,7 +46,7 @@ async def registrar_pedido(resumen: PedidoResumen):
         pedido["usuario_check_picking"] = None
         pedido["estado_check_picking"] = "pendiente"
         
-        result = db["PEDIDOS"].insert_one(pedido)
+        result = pedidos_collection.insert_one(pedido)
         if result.inserted_id:
             return {
                 "message": "Pedido registrado exitosamente",
@@ -62,9 +64,11 @@ async def registrar_pedido(resumen: PedidoResumen):
 async def obtener_pedidos_optimizado(
     estados: Optional[List[str]] = Query(default=None),
     fecha_desde: Optional[str] = Query(default=None, description="Fecha desde en formato YYYY-MM-DD"),
-    fecha_hasta: Optional[str] = Query(default=None, description="Fecha hasta en formato YYYY-MM-DD")
+    fecha_hasta: Optional[str] = Query(default=None, description="Fecha hasta en formato YYYY-MM-DD"),
+    db: Database = Depends(get_db),
 ):
     try:
+        pedidos_collection = db["PEDIDOS"]
         # Si no se proporcionan estados, obtener todos los pedidos
         query_filter = {}
         
@@ -100,12 +104,13 @@ async def obtener_pedidos_optimizado(
 
 # Nuevo endpoint: obtener pedidos por estado
 @router.get("/pedidos/administracion/")
-async def obtener_pedidos_administracion():
+async def obtener_pedidos_administracion(db: Database = Depends(get_db)):
     """
     Devuelve todos los pedidos que necesitan validación en Administración.
     Solo muestra pedidos en estado 'nuevo' que NO han sido validados.
     """
     try:
+        pedidos_collection = db["PEDIDOS"]
         # Filtrar pedidos que estén en estado 'nuevo' y NO validados
         pedidos = list(pedidos_collection.find({
             "estado": "nuevo",
@@ -124,12 +129,13 @@ async def obtener_pedidos_administracion():
         raise HTTPException(status_code=500, detail="Error al obtener los pedidos para administración")
 
 @router.get("/pedidos/picking/")
-async def obtener_pedidos_picking():
+async def obtener_pedidos_picking(db: Database = Depends(get_db)):
     """
     Devuelve todos los pedidos que están listos para picking (validados y en estado 'nuevo').
     Solo muestra pedidos que han sido validados en Administración.
     """
     try:
+        pedidos_collection = db["PEDIDOS"]
         # Filtrar pedidos que estén validados y en estado 'nuevo'
         pedidos = list(pedidos_collection.find({
             "estado": "nuevo",
@@ -145,11 +151,12 @@ async def obtener_pedidos_picking():
         raise HTTPException(status_code=500, detail="Error al obtener los pedidos para picking")
 
 @router.get("/pedidos/por_estado/{estado}")
-async def obtener_pedidos_por_estado(estado: str):
+async def obtener_pedidos_por_estado(estado: str, db: Database = Depends(get_db)):
     """
     Devuelve todos los pedidos con el estado especificado.
     """
     try:
+        pedidos_collection = db["PEDIDOS"]
         pedidos = list(pedidos_collection.find({"estado": estado}))
         for pedido in pedidos:
             pedido["_id"] = str(pedido["_id"])
@@ -158,7 +165,7 @@ async def obtener_pedidos_por_estado(estado: str):
         print(f"Error al obtener pedidos por estado: {e}")
         raise HTTPException(status_code=500, detail="Error al obtener los pedidos por estado")
 @router.post("/pedidos/armados/")
-async def registrar_pedido_armado(resumen: PedidoArmado):
+async def registrar_pedido_armado(resumen: PedidoArmado, db: Database = Depends(get_db)):
     """
     Endpoint para registrar un pedido armado en la colección PEDIDOS_ARMADOS.
     """
@@ -180,12 +187,13 @@ async def registrar_pedido_armado(resumen: PedidoArmado):
         raise HTTPException(status_code=500, detail="Error interno del servidor")
 
 @router.put("/pedidos/actualizar_estado/{pedido_id}")
-async def actualizar_estado_pedido(pedido_id: str, datos: ActualizarEstadoPedido):
+async def actualizar_estado_pedido(pedido_id: str, datos: ActualizarEstadoPedido, db: Database = Depends(get_db)):
     """
     Endpoint mejorado para actualizar el estado de un pedido con soporte completo para check_picking.
     Maneja todas las transiciones de estado con validaciones específicas.
     """
     try:
+        pedidos_collection = db["PEDIDOS"]
         # Convertir ID a ObjectId
         try:
             pedido_object_id = ObjectId(pedido_id)
@@ -277,12 +285,13 @@ async def actualizar_estado_pedido(pedido_id: str, datos: ActualizarEstadoPedido
         raise HTTPException(status_code=500, detail=f"Error interno del servidor: {str(e)}")
 
 @router.post("/pedidos/{pedido_id}/finalizar_check_picking")
-async def finalizar_check_picking(pedido_id: str, datos: FinalizarCheckPicking):
+async def finalizar_check_picking(pedido_id: str, datos: FinalizarCheckPicking, db: Database = Depends(get_db)):
     """
     Finaliza el proceso de Check Picking para un pedido.
     Valida todas las verificaciones y cambia el estado a 'packing'.
     """
     try:
+        pedidos_collection = db["PEDIDOS"]
         # Convertir ID a ObjectId
         try:
             pedido_object_id = ObjectId(pedido_id)
@@ -355,12 +364,13 @@ async def finalizar_check_picking(pedido_id: str, datos: FinalizarCheckPicking):
         raise HTTPException(status_code=500, detail=f"Error interno del servidor: {str(e)}")
 
 @router.put("/pedidos/{pedido_id}/cancelar")
-async def cancelar_pedido(pedido_id: str):
+async def cancelar_pedido(pedido_id: str, db: Database = Depends(get_db)):
     """
     Cancela un pedido cambiando su estado a 'cancelado'.
     Solo permite cancelar pedidos que NO estén en estado 'entregado'.
     """
     try:
+        pedidos_collection = db["PEDIDOS"]
         # Convertir ID a ObjectId
         try:
             pedido_object_id = ObjectId(pedido_id)
@@ -424,18 +434,19 @@ async def cancelar_pedido(pedido_id: str):
         raise HTTPException(status_code=500, detail=f"Error interno del servidor: {str(e)}")
 
 @router.put("/pedidos/actualizar/{id}")
-async def actualizar_pedido(id: str, pedido_actualizado: dict):
+async def actualizar_pedido(id: str, pedido_actualizado: dict, db: Database = Depends(get_db)):
     """
     Endpoint para actualizar un pedido en la colección PEDIDOS.
     """
     try:
+        pedidos_collection = db["PEDIDOS"]
         try:
             pedido_object_id = ObjectId(id)
         except InvalidId:
             raise HTTPException(status_code=400, detail="ID inválido")
         if "_id" in pedido_actualizado:
             del pedido_actualizado["_id"]
-        resultado = db["PEDIDOS"].find_one_and_update(
+        resultado = pedidos_collection.find_one_and_update(
             {"_id": pedido_object_id},
             {"$set": pedido_actualizado},
             return_document=True
@@ -449,14 +460,15 @@ async def actualizar_pedido(id: str, pedido_actualizado: dict):
         raise HTTPException(status_code=500, detail=f"Error al actualizar el pedido: {error}")
 
 @router.patch("/pedidos/actualizar_cantidades/{pedido_id}")
-async def actualizar_cantidades_encontradas(pedido_id: str = Path(...), body: CantidadesEncontradas = Body(...)):
+async def actualizar_cantidades_encontradas(pedido_id: str = Path(...), body: CantidadesEncontradas = Body(...), db: Database = Depends(get_db)):
     """
     Actualiza las cantidades encontradas de los productos de un pedido.
     El body debe ser: { "cantidades": { "<pedidoid>_<productoid>": cantidad, ... } }
     """
     try:
+        pedidos_collection = db["PEDIDOS"]
         pedido_object_id = ObjectId(pedido_id)
-        pedido = db["PEDIDOS"].find_one({"_id": pedido_object_id})
+        pedido = pedidos_collection.find_one({"_id": pedido_object_id})
         if not pedido:
             raise HTTPException(status_code=404, detail="Pedido no encontrado")
         productos = pedido.get("productos", [])
@@ -465,18 +477,19 @@ async def actualizar_cantidades_encontradas(pedido_id: str = Path(...), body: Ca
             key = f"{pedido_id}_{prod['id']}"
             if key in cantidades:
                 prod["cantidad_encontrada"] = cantidades[key]
-        db["PEDIDOS"].update_one({"_id": pedido_object_id}, {"$set": {"productos": productos}})
+        pedidos_collection.update_one({"_id": pedido_object_id}, {"$set": {"productos": productos}})
         return {"message": "Cantidades encontradas actualizadas"}
     except Exception as e:
         print(f"Error al actualizar cantidades encontradas: {e}")
         raise HTTPException(status_code=500, detail="Error interno del servidor")
 
 @router.get("/pedidos/por_cliente/{rif}")
-async def obtener_pedidos_por_cliente(rif: str):
+async def obtener_pedidos_por_cliente(rif: str, db: Database = Depends(get_db)):
     """
     Devuelve todos los pedidos asociados a un RIF de cliente.
     """
     try:
+        pedidos_collection = db["PEDIDOS"]
         pedidos = list(pedidos_collection.find({"rif": rif}))
         for pedido in pedidos:
             pedido["_id"] = str(pedido["_id"])
@@ -488,13 +501,15 @@ async def obtener_pedidos_por_cliente(rif: str):
 @router.patch("/pedidos/actualizar_picking/{pedido_id}")
 async def actualizar_picking_info(
     pedido_id: str = Path(...),
-    picking: PickingInfo = Body(...)
+    picking: PickingInfo = Body(...),
+    db: Database = Depends(get_db),
 ):
     """
     Actualiza los campos de picking (almacenista, fechainicio_picking, fechafin_picking, estado_picking) en un pedido,
     agrupados bajo el objeto 'picking'.
     """
     try:
+        pedidos_collection = db["PEDIDOS"]
         pedido_object_id = ObjectId(pedido_id)
         picking_data = picking.dict()
         update_fields = {f"picking.{k}": v for k, v in picking_data.items()}
@@ -502,7 +517,7 @@ async def actualizar_picking_info(
             update_fields["picking"] = {}
         if not update_fields:
             raise HTTPException(status_code=400, detail="No se enviaron campos para actualizar picking.")
-        result = db["PEDIDOS"].update_one(
+        result = pedidos_collection.update_one(
             {"_id": pedido_object_id},
             {"$set": update_fields}
         )
@@ -519,17 +534,19 @@ async def actualizar_picking_info(
 @router.patch("/pedidos/actualizar_packing/{pedido_id}")
 async def actualizar_packing_info(
     pedido_id: str = Path(...),
-    packing: PackingInfo = Body(...)
+    packing: PackingInfo = Body(...),
+    db: Database = Depends(get_db),
 ):
     """
     Actualiza el objeto packing (usuario, estado_packing, fechainicio, fechafin) en un pedido.
     """
     try:
+        pedidos_collection = db["PEDIDOS"]
         pedido_object_id = ObjectId(pedido_id)
         update_fields = {f"packing.{k}": v for k, v in packing.dict().items() if v is not None}
         if not update_fields:
             raise HTTPException(status_code=400, detail="No se enviaron campos para actualizar packing.")
-        result = db["PEDIDOS"].update_one(
+        result = pedidos_collection.update_one(
             {"_id": pedido_object_id},
             {"$set": update_fields}
         )
@@ -546,17 +563,19 @@ async def actualizar_packing_info(
 @router.patch("/pedidos/actualizar_envio/{pedido_id}")
 async def actualizar_envio_info(
     pedido_id: str = Path(...),
-    envio: EnvioInfo = Body(...)
+    envio: EnvioInfo = Body(...),
+    db: Database = Depends(get_db),
 ):
     """
     Actualiza el objeto envio (usuario, chofer, estadoenvio, fechaini, fechafin) en un pedido.
     """
     try:
+        pedidos_collection = db["PEDIDOS"]
         pedido_object_id = ObjectId(pedido_id)
         update_fields = {f"envio.{k}": v for k, v in envio.dict().items() if v is not None}
         if not update_fields:
             raise HTTPException(status_code=400, detail="No se enviaron campos para actualizar envio.")
-        result = db["PEDIDOS"].update_one(
+        result = pedidos_collection.update_one(
             {"_id": pedido_object_id},
             {"$set": update_fields}
         )
@@ -571,13 +590,14 @@ async def actualizar_envio_info(
         raise HTTPException(status_code=500, detail="Error interno del servidor")
 
 @router.get("/pedido/{pedido_id}")
-async def obtener_pedido_por_id(pedido_id: str):
+async def obtener_pedido_por_id(pedido_id: str, db: Database = Depends(get_db)):
     """
     Devuelve un pedido por su ID, asegurando que los objetos picking, packing y envio siempre estén presentes (aunque vacíos).
     """
     try:
+        pedidos_collection = db["PEDIDOS"]
         pedido_object_id = ObjectId(pedido_id)
-        pedido = db["PEDIDOS"].find_one({"_id": pedido_object_id})
+        pedido = pedidos_collection.find_one({"_id": pedido_object_id})
         if not pedido:
             raise HTTPException(status_code=404, detail="Pedido no encontrado")
         pedido["_id"] = str(pedido["_id"])
@@ -596,7 +616,7 @@ async def obtener_pedido_por_id(pedido_id: str):
         raise HTTPException(status_code=500, detail="Error interno del servidor")
 
 @router.get("/conductores/")
-async def obtener_conductores():
+async def obtener_conductores(db: Database = Depends(get_db)):
     """
     Devuelve todos los conductores registrados en la colección CONDUCTORES.
     """
@@ -610,11 +630,12 @@ async def obtener_conductores():
         raise HTTPException(status_code=500, detail="Error al obtener la lista de conductores")
 
 @router.get("/pedidos/para_facturar/")
-async def obtener_pedidos_para_facturar():
+async def obtener_pedidos_para_facturar(db: Database = Depends(get_db)):
     """
     Devuelve todos los pedidos en estado 'para_facturar' o 'facturando'.
     """
     try:
+        pedidos_collection = db["PEDIDOS"]
         pedidos = list(pedidos_collection.find({"estado": {"$in": ["para_facturar", "facturando"]}}))
         for pedido in pedidos:
             pedido["_id"] = str(pedido["_id"])
@@ -626,17 +647,18 @@ async def obtener_pedidos_para_facturar():
 # Nuevo endpoint: consultar todos los pedidos con el estatus 'checkpicking'
 
 @router.put("/pedidos/actualizar_facturacion/{pedido_id}")
-async def actualizar_estado_facturacion(pedido_id: str, facturacion: FacturacionInfo = Body(...)):
+async def actualizar_estado_facturacion(pedido_id: str, facturacion: FacturacionInfo = Body(...), db: Database = Depends(get_db)):
     """
     Cambia el estado de un pedido a 'facturando' y actualiza el objeto facturacion.
     """
     try:
+        pedidos_collection = db["PEDIDOS"]
         pedido_object_id = ObjectId(pedido_id)
         update_fields = {
             "estado": "facturando",
             "facturacion": facturacion.dict()
         }
-        result = db["PEDIDOS"].update_one({"_id": pedido_object_id}, {"$set": update_fields})
+        result = pedidos_collection.update_one({"_id": pedido_object_id}, {"$set": update_fields})
         if result.modified_count:
             return {"message": "Estado y facturación actualizados"}
         else:
@@ -645,17 +667,18 @@ async def actualizar_estado_facturacion(pedido_id: str, facturacion: Facturacion
         raise HTTPException(status_code=500, detail=f"Error al actualizar la facturación: {e}")
 
 @router.put("/pedidos/finalizar_facturacion/{pedido_id}")
-async def finalizar_facturacion(pedido_id: str, facturacion: FacturacionInfo = Body(...)):
+async def finalizar_facturacion(pedido_id: str, facturacion: FacturacionInfo = Body(...), db: Database = Depends(get_db)):
     """
     Cambia el estado de un pedido de 'facturando' a 'enviado' y actualiza el objeto facturacion.
     """
     try:
+        pedidos_collection = db["PEDIDOS"]
         pedido_object_id = ObjectId(pedido_id)
         update_fields = {
             "estado": "enviado",
             "facturacion": facturacion.dict()
         }
-        result = db["PEDIDOS"].update_one({"_id": pedido_object_id}, {"$set": update_fields})
+        result = pedidos_collection.update_one({"_id": pedido_object_id}, {"$set": update_fields})
         if result.modified_count:
             return {"message": "Facturación finalizada y pedido enviado"}
         else:
@@ -664,11 +687,12 @@ async def finalizar_facturacion(pedido_id: str, facturacion: FacturacionInfo = B
         raise HTTPException(status_code=500, detail=f"Error al finalizar la facturación: {e}")
 
 @router.get("/pedidos/checkpicking/")
-async def obtener_pedidos_checkpicking():
+async def obtener_pedidos_checkpicking(db: Database = Depends(get_db)):
     """
     Devuelve todos los pedidos con el estado 'checkpicking'.
     """
     try:
+        pedidos_collection = db["PEDIDOS"]
         pedidos = list(pedidos_collection.find({"estado": "checkpicking"}))
         for pedido in pedidos:
             pedido["_id"] = str(pedido["_id"])
@@ -678,7 +702,7 @@ async def obtener_pedidos_checkpicking():
         raise HTTPException(status_code=500, detail="Error al obtener los pedidos con estado checkpicking")
 
 @router.post("/pedidos/{pedido_id}/validar")
-async def validar_pedido(pedido_id: str, validacion: ValidacionPedido):
+async def validar_pedido(pedido_id: str, validacion: ValidacionPedido, db: Database = Depends(get_db)):
     """
     Valida un pedido con PIN y cambia su estado de 'nuevo' a 'picking'.
     
@@ -690,6 +714,7 @@ async def validar_pedido(pedido_id: str, validacion: ValidacionPedido):
         Confirmación de éxito con el pedido actualizado
     """
     try:
+        pedidos_collection = db["PEDIDOS"]
         # PIN fijo para validación (puedes cambiarlo después)
         PIN_VALIDO = "1234"
         

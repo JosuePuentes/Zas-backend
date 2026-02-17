@@ -1,23 +1,23 @@
-from fastapi import APIRouter, HTTPException, Path
+from fastapi import APIRouter, HTTPException, Path, Depends
 from fastapi.responses import JSONResponse
 from bson import ObjectId
 from bson.errors import InvalidId
-from ..database import db, pedidos_collection
+from pymongo.database import Database
+from ..database import get_db
 from ..models.formato_impresion import FacturaPreliminarData
 from datetime import datetime
 from typing import Optional, Dict, Any
 
 router = APIRouter()
 
-# Colección para formatos de impresión
-formatos_collection = db["formatos_impresion"]
-
 @router.get("/pedidos/{pedido_id}/factura-preliminar")
-async def generar_factura_preliminar(pedido_id: str):
+async def generar_factura_preliminar(pedido_id: str, db: Database = Depends(get_db)):
     """
     Generar factura preliminar con formato dinámico.
     """
     try:
+        pedidos_collection = db["PEDIDOS"]
+        formatos_collection = db["formatos_impresion"]
         # Convertir ID a ObjectId
         try:
             pedido_object_id = ObjectId(pedido_id)
@@ -61,11 +61,13 @@ async def generar_factura_preliminar(pedido_id: str):
         raise HTTPException(status_code=500, detail=f"Error interno del servidor: {str(e)}")
 
 @router.get("/pedidos/{pedido_id}/factura-final")
-async def generar_factura_final(pedido_id: str):
+async def generar_factura_final(pedido_id: str, db: Database = Depends(get_db)):
     """
     Generar factura final con formato dinámico.
     """
     try:
+        pedidos_collection = db["PEDIDOS"]
+        formatos_collection = db["formatos_impresion"]
         # Convertir ID a ObjectId
         try:
             pedido_object_id = ObjectId(pedido_id)
@@ -109,11 +111,13 @@ async def generar_factura_final(pedido_id: str):
         raise HTTPException(status_code=500, detail=f"Error interno del servidor: {str(e)}")
 
 @router.get("/pedidos/{pedido_id}/etiqueta-envio")
-async def generar_etiqueta_envio(pedido_id: str):
+async def generar_etiqueta_envio(pedido_id: str, db: Database = Depends(get_db)):
     """
     Generar etiqueta de envío con formato dinámico.
     """
     try:
+        pedidos_collection = db["PEDIDOS"]
+        formatos_collection = db["formatos_impresion"]
         # Convertir ID a ObjectId
         try:
             pedido_object_id = ObjectId(pedido_id)

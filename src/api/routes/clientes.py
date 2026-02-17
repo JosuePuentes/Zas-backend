@@ -1,7 +1,8 @@
-from fastapi import APIRouter, HTTPException, Body, status
+from fastapi import APIRouter, HTTPException, Body, status, Depends
 from fastapi.responses import JSONResponse
 from bson import ObjectId
-from ..database import db, clients_collection
+from pymongo.database import Database
+from ..database import get_db
 from ..models.models import Client, ClientUpdate
 from ..auth.auth_utils import get_password_hash
 import traceback
@@ -9,8 +10,9 @@ import traceback
 router = APIRouter()
 
 @router.post("/clientes/", response_model=Client, status_code=201)
-async def create_client(client: Client):
+async def create_client(client: Client, db: Database = Depends(get_db)):
     try:
+        clients_collection = db["CLIENTES"]
         client_dict = client.dict()
         client_dict["password"] = get_password_hash(client_dict["password"])
         if clients_collection.find_one({"rif": client.rif}):
@@ -24,11 +26,12 @@ async def create_client(client: Client):
     
 @router.get("/clientes/all", 
             summary="Obtener todos los clientes (conversión manual)")
-async def get_all_clients_manual_conversion():
+async def get_all_clients_manual_conversion(db: Database = Depends(get_db)):
     """
     Obtiene una lista de clientes y convierte manualmente el campo _id
     de ObjectId a string antes de devolver el JSON.
     """
+    clients_collection = db["CLIENTES"]
     clients_list = []
     
     # 1. Iteramos sobre cada documento que viene de la base de datos
@@ -46,7 +49,8 @@ async def get_all_clients_manual_conversion():
     return JSONResponse(content=clients_list, status_code=status.HTTP_200_OK)
 
 @router.get("/clientes/{rif}")
-async def read_client(rif: str):
+async def read_client(rif: str, db: Database = Depends(get_db)):
+    clients_collection = db["CLIENTES"]
     client = clients_collection.find_one({"rif": rif})
     if client:
         client["_id"] = str(client["_id"])
@@ -54,7 +58,8 @@ async def read_client(rif: str):
     raise HTTPException(status_code=404, detail="Cliente no encontrado")
 
 @router.patch("/clientes/{rif}")
-async def update_client(rif: str, client: ClientUpdate):
+async def update_client(rif: str, client: ClientUpdate, db: Database = Depends(get_db)):
+    clients_collection = db["CLIENTES"]
     # Requiere implementación de update_document
     success, result = update_document(clients_collection, {"rif": rif}, client.dict())
     if success:
@@ -62,7 +67,8 @@ async def update_client(rif: str, client: ClientUpdate):
     raise HTTPException(status_code=404, detail=result)
 
 @router.delete("/clientes/{rif}")
-async def delete_client(rif: str):
+async def delete_client(rif: str, db: Database = Depends(get_db)):
+    clients_collection = db["CLIENTES"]
     # Requiere implementación de delete_document
     success, result = delete_document(clients_collection, {"rif": rif})
     if success:
@@ -70,8 +76,9 @@ async def delete_client(rif: str):
     raise HTTPException(status_code=404, detail=result)
 
 @router.get("/clientes/")
-async def obtener_clientes():
+async def obtener_clientes(db: Database = Depends(get_db)):
     try:
+        clients_collection = db["CLIENTES"]
         clientes = list(clients_collection.find({}, {"_id": 1, "email": 1, "rif": 1, "encargado": 1}))
         for cliente in clientes:
             cliente["_id"] = str(cliente["_id"])
@@ -81,8 +88,9 @@ async def obtener_clientes():
         raise HTTPException(status_code=500, detail="Error al obtener la lista de clientes")
 
 @router.get("/clientes/{rif}")
-async def obtener_cliente_por_rif(rif: str):
+async def obtener_cliente_por_rif(rif: str, db: Database = Depends(get_db)):
     try:
+        clients_collection = db["CLIENTES"]
         cliente = clients_collection.find_one({"rif": rif})
         if not cliente:
             return JSONResponse(content={"error": "Cliente no encontrado"}, status_code=404)

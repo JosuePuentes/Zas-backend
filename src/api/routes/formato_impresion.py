@@ -1,8 +1,9 @@
-from fastapi import APIRouter, HTTPException, Query, Path
+from fastapi import APIRouter, HTTPException, Query, Path, Depends
 from fastapi.responses import JSONResponse
 from bson import ObjectId
 from bson.errors import InvalidId
-from ..database import db
+from pymongo.database import Database
+from ..database import get_db
 from ..models.formato_impresion import FormatoImpresion, FormatoImpresionCreate, FormatoImpresionUpdate, FacturaPreliminarData
 from datetime import datetime
 from typing import Optional, List
@@ -29,18 +30,17 @@ def serializar_formato(formato):
 
 router = APIRouter()
 
-# Colección para formatos de impresión
-formatos_collection = db["formatos_impresion"]
-
 @router.get("/")
 async def obtener_formatos(
     activo: Optional[bool] = Query(default=None, description="Filtrar por estado activo"),
-    tipo: Optional[str] = Query(default=None, description="Filtrar por tipo de formato")
+    tipo: Optional[str] = Query(default=None, description="Filtrar por tipo de formato"),
+    db: Database = Depends(get_db),
 ):
     """
     Obtener todos los formatos de impresión con filtros opcionales.
     """
     try:
+        formatos_collection = db["formatos_impresion"]
         # Construir filtro de consulta
         query_filter = {}
         
@@ -69,11 +69,12 @@ async def obtener_formatos(
         raise HTTPException(status_code=500, detail=f"Error interno del servidor: {str(e)}")
 
 @router.get("/{tipo}")
-async def obtener_formato_por_tipo(tipo: str):
+async def obtener_formato_por_tipo(tipo: str, db: Database = Depends(get_db)):
     """
     Obtener formato específico por tipo (ej: "factura_preliminar").
     """
     try:
+        formatos_collection = db["formatos_impresion"]
         formato = formatos_collection.find_one({"tipo": tipo, "activo": True})
         
         if not formato:
@@ -94,11 +95,12 @@ async def obtener_formato_por_tipo(tipo: str):
         raise HTTPException(status_code=500, detail=f"Error interno del servidor: {str(e)}")
 
 @router.post("/")
-async def crear_formato(formato_data: FormatoImpresionCreate):
+async def crear_formato(formato_data: FormatoImpresionCreate, db: Database = Depends(get_db)):
     """
     Crear nuevo formato de impresión.
     """
     try:
+        formatos_collection = db["formatos_impresion"]
         # Verificar que no exista un formato activo del mismo tipo
         formato_existente = formatos_collection.find_one({
             "tipo": formato_data.tipo,
@@ -187,11 +189,12 @@ async def crear_formato(formato_data: FormatoImpresionCreate):
         raise HTTPException(status_code=500, detail=f"Error interno del servidor: {str(e)}")
 
 @router.put("/{tipo}")
-async def actualizar_formato(tipo: str, formato_data: FormatoImpresionUpdate):
+async def actualizar_formato(tipo: str, formato_data: FormatoImpresionUpdate, db: Database = Depends(get_db)):
     """
     Actualizar formato específico por tipo.
     """
     try:
+        formatos_collection = db["formatos_impresion"]
         # Buscar el formato existente
         formato_existente = formatos_collection.find_one({"tipo": tipo})
         
@@ -252,11 +255,12 @@ async def actualizar_formato(tipo: str, formato_data: FormatoImpresionUpdate):
         raise HTTPException(status_code=500, detail=f"Error interno del servidor: {str(e)}")
 
 @router.delete("/{tipo}")
-async def desactivar_formato(tipo: str):
+async def desactivar_formato(tipo: str, db: Database = Depends(get_db)):
     """
     Desactivar formato específico (soft delete).
     """
     try:
+        formatos_collection = db["formatos_impresion"]
         # Buscar el formato existente
         formato_existente = formatos_collection.find_one({"tipo": tipo})
         
@@ -292,11 +296,12 @@ async def desactivar_formato(tipo: str):
         raise HTTPException(status_code=500, detail=f"Error interno del servidor: {str(e)}")
 
 @router.delete("/id/{id}")
-async def eliminar_formato_por_id(id: str):
+async def eliminar_formato_por_id(id: str, db: Database = Depends(get_db)):
     """
     Eliminar formato específico por ID (hard delete).
     """
     try:
+        formatos_collection = db["formatos_impresion"]
         from bson import ObjectId
         
         # Convertir string a ObjectId
@@ -334,11 +339,12 @@ async def eliminar_formato_por_id(id: str):
         raise HTTPException(status_code=500, detail=f"Error interno del servidor: {str(e)}")
 
 @router.get("/{tipo}/preview")
-async def preview_formato(tipo: str):
+async def preview_formato(tipo: str, db: Database = Depends(get_db)):
     """
     Obtener preview del formato con datos de ejemplo.
     """
     try:
+        formatos_collection = db["formatos_impresion"]
         formato = formatos_collection.find_one({"tipo": tipo, "activo": True})
         
         if not formato:

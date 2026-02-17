@@ -1,12 +1,13 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from datetime import datetime
-from ..database import db
+from pymongo.database import Database
+from ..database import get_db
 from ..models.models import ReclamoCliente
 
 router = APIRouter()
 
 @router.post("/reclamos/cliente")
-async def registrar_reclamo_cliente(reclamo: ReclamoCliente):
+async def registrar_reclamo_cliente(reclamo: ReclamoCliente, db: Database = Depends(get_db)):
     """
     Recibe un reclamo de cliente y lo guarda en la colección RECLAMOS_CLIENTE.
     """
@@ -23,7 +24,7 @@ async def registrar_reclamo_cliente(reclamo: ReclamoCliente):
         raise HTTPException(status_code=500, detail="Error interno al registrar el reclamo")
 
 @router.get("/reclamos/cliente/{rif}")
-async def obtener_reclamos_cliente(rif: str):
+async def obtener_reclamos_cliente(rif: str, db: Database = Depends(get_db)):
     """
     Devuelve todos los reclamos asociados a un RIF de cliente.
     """

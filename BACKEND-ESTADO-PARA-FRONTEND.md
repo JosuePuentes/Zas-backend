@@ -27,6 +27,17 @@ Este documento describe la API del backend (FastAPI en Render) para que el front
 | **Content-Type** | `application/json` en POST/PUT/PATCH |
 | **Autenticación** | JWT en header: `Authorization: Bearer <token>` (donde el backend lo requiera; actualmente muchos endpoints no validan token) |
 
+### Multi-tenant (un backend, varios frontends y bases de datos)
+
+El backend elige la **base de datos** según el **Origin** del request (desde qué URL llama el frontend). En Render configura:
+
+- **MONGO_URI:** una sola cadena de conexión a un **cluster** de MongoDB (en ese cluster pueden existir varias bases: DROCOLVEN, VIRGENCARMEN, etc.).
+- **TENANT_ORIGIN_DB:** mapa `host:nombre_base`, por ejemplo:  
+  `virgen-del-carmen-frontend.vercel.app:VIRGENCARMEN,www.drocolven.com:DROCOLVEN,drocolven.com:DROCOLVEN,localhost:3000:DROCOLVEN`
+- **DEFAULT_TENANT_DB:** base por defecto si el Origin no está en el mapa (ej: `DROCOLVEN`).
+
+Cada petición usa la base correspondiente a su Origin; no hace falta un Render ni una MONGO_URI por frontend.
+
 ---
 
 ## 2. Autenticación
