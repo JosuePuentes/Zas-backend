@@ -14,9 +14,10 @@ async def register(client: Client, db: Database = Depends(get_db)):
     hashed_password = get_password_hash(client.password)
     new_client = client.dict()
     new_client["password"] = hashed_password
+    new_client["estado_aprobacion"] = "pendiente"  # Hasta que un admin apruebe
     result = clients_collection.insert_one(new_client)
     if result.inserted_id:
-        return {"message": "Cliente registrado exitosamente"}
+        return {"message": "Cliente registrado exitosamente. Su cuenta está pendiente de aprobación."}
     raise HTTPException(status_code=500, detail="Error al registrar el cliente")
 
 @router.post("/login/")
@@ -27,6 +28,11 @@ async def login(user: UserLogin, db: Database = Depends(get_db)):
         raise HTTPException(status_code=401, detail="Cliente no encontrado")
     if not verify_password(user.password, db_client["password"]):
         raise HTTPException(status_code=401, detail="Contraseña incorrecta")
+    estado = db_client.get("estado_aprobacion", "aprobado")  # Clientes antiguos sin campo = aprobado
+    if estado == "pendiente":
+        raise HTTPException(status_code=403, detail="Pendiente de aprobación. Su solicitud está en revisión.")
+    if estado == "rechazado":
+        raise HTTPException(status_code=403, detail="Solicitud rechazada. Contacte al administrador.")
     # Usar el objeto completo para el token
     access_token = create_access_token(db_client)
     return {

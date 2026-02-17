@@ -16,6 +16,9 @@ Este documento describe la API del backend (FastAPI en Render) para que el front
 | GET | `/pedidos/por_cliente/{rif}` | Pedidos del cliente |
 | POST | `/reclamos/cliente` | Crear reclamo |
 | GET | `/reclamos/cliente/{rif}` | Listar reclamos |
+| GET | `/clientes/solicitudes/pendientes` | (Admin) Solicitudes de nuevos clientes |
+| PATCH | `/clientes/{rif}/aprobar` | (Admin) Aprobar cliente |
+| PATCH | `/clientes/{rif}/rechazar` | (Admin) Rechazar cliente |
 
 ---
 
@@ -61,7 +64,7 @@ Cada petición usa la base correspondiente a su Origin; no hace falta un Render 
   "descuento3": 0
 }
 ```
-- **Respuesta:** `{ "message": "Cliente registrado exitosamente" }` o error 400 (correo/RIF ya existe).
+- **Respuesta:** `{ "message": "Cliente registrado exitosamente. Su cuenta está pendiente de aprobación." }` o error 400 (correo/RIF ya existe). Los nuevos clientes quedan con `estado_aprobacion: "pendiente"` hasta que un admin los apruebe.
 
 ### 2.2 Login cliente (público)
 
@@ -81,7 +84,8 @@ Cada petición usa la base correspondiente a su Origin; no hace falta un Render 
   "rif": "string"
 }
 ```
-- Guardar `access_token` y enviarlo en `Authorization: Bearer <access_token>` en llamadas que lo requieran. El backend usa el mismo token para identificar al cliente (rif, email en el payload del JWT).
+- **Errores de estado:** Si el cliente está pendiente de aprobación: **403** `detail: "Pendiente de aprobación. Su solicitud está en revisión."`. Si fue rechazado: **403** `detail: "Solicitud rechazada. Contacte al administrador."`. El frontend debe mostrar ese mensaje y no dar acceso.
+- Guardar `access_token` y enviarlo en `Authorization: Bearer <access_token>` en llamadas que lo requieran.
 
 ### 2.3 Registro admin (público, uso interno)
 
@@ -109,7 +113,10 @@ Cada petición usa la base correspondiente a su Origin; no hace falta un Render 
 
 | Método | Ruta | Descripción | Body / Params |
 |--------|------|-------------|----------------|
-| POST | `/clientes/` | Crear cliente | `Client`: rif, empresa (opc.), encargado, direccion, telefono, email, password, descripcion, dias_credito, limite_credito, activo, descuento1, descuento2, descuento3 |
+| POST | `/clientes/` | Crear cliente | `Client`: rif, empresa (opc.), encargado, direccion, telefono, email, password, descripcion, dias_credito, limite_credito, activo, descuento1, descuento2, descuento3. Se guarda con `estado_aprobacion: "pendiente"`. |
+| GET | `/clientes/solicitudes/pendientes` | **(Admin)** Listar solicitudes pendientes | —. Respuesta: array con `_id`, `empresa`, `rif`, `telefono`, `encargado`, `email`, `direccion`, `estado_aprobacion`. |
+| PATCH | `/clientes/{rif}/aprobar` | **(Admin)** Aprobar cliente; podrá hacer login | Path: rif. Respuesta: `{ "message": "Cliente aprobado. Ya puede iniciar sesión." }`. |
+| PATCH | `/clientes/{rif}/rechazar` | **(Admin)** Rechazar solicitud | Path: rif. Respuesta: `{ "message": "Solicitud rechazada." }`. |
 | GET | `/clientes/all` | Listar todos (con `_id` como string) | — |
 | GET | `/clientes/` | Lista resumida (email, rif, encargado) | — |
 | GET | `/clientes/{rif}` | Cliente por RIF | Path: `rif` |

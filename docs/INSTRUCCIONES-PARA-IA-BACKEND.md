@@ -19,14 +19,17 @@ El frontend **Virgen del Carmen** (Vite + React) está conectado al backend Fast
    - Localhost en desarrollo: `http://localhost:3000` (y el puerto que use Vite si es otro)
 
 3. **Rutas usadas por el frontend:**
-   - `POST /login/` — Login cliente
-   - `POST /register/` — Registro cliente
+   - `POST /login/` — Login cliente (puede devolver 403 si pendiente de aprobación o rechazado)
+   - `POST /register/` — Registro cliente (queda estado_aprobacion: pendiente)
    - `POST /contacto` — Formulario de contacto
    - `POST /api/chat` — Chatbot
    - `GET /inventario_maestro/` — Catálogo
    - `GET /pedidos/por_cliente/{rif}` — Pedidos del cliente
    - `POST /reclamos/cliente` — Crear reclamo
    - `GET /reclamos/cliente/{rif}` — Listar reclamos
+   - `GET /clientes/solicitudes/pendientes` — (Admin) Solicitudes de nuevos clientes
+   - `PATCH /clientes/{rif}/aprobar` — (Admin) Aprobar cliente
+   - `PATCH /clientes/{rif}/rechazar` — (Admin) Rechazar cliente
 
 4. **Formato de respuestas:**
    - **Login:** `{ "access_token": "...", "rif": "...", "role": "client" }` (y los demás campos que ya devuelve el backend)

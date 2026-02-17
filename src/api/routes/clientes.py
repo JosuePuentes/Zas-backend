@@ -19,11 +19,55 @@ async def create_client(client: Client, db: Database = Depends(get_db)):
             raise HTTPException(status_code=400, detail="El RIF ya está registrado")
         if clients_collection.find_one({"email": client.email}):
             raise HTTPException(status_code=400, detail="El correo ya está registrado")
+        client_dict["estado_aprobacion"] = "pendiente"
         clients_collection.insert_one(client_dict)
         return client
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    
+
+
+@router.get("/clientes/solicitudes/pendientes", summary="Listar solicitudes de nuevos clientes (admin)")
+async def listar_solicitudes_pendientes(db: Database = Depends(get_db)):
+    """
+    Devuelve los clientes con estado_aprobacion = 'pendiente' para el módulo administrativo.
+    Campos: _id, empresa, rif, telefono, encargado, email, direccion.
+    """
+    clients_collection = db["CLIENTES"]
+    solicitudes = list(clients_collection.find(
+        {"estado_aprobacion": "pendiente"},
+        {"_id": 1, "empresa": 1, "rif": 1, "telefono": 1, "encargado": 1, "email": 1, "direccion": 1, "estado_aprobacion": 1}
+    ))
+    for s in solicitudes:
+        s["_id"] = str(s["_id"])
+    return JSONResponse(content=solicitudes, status_code=200)
+
+
+@router.patch("/clientes/{rif}/aprobar", summary="Aprobar solicitud de cliente (admin)")
+async def aprobar_cliente(rif: str, db: Database = Depends(get_db)):
+    """Aprueba un cliente; podrá hacer login y tener acceso completo."""
+    clients_collection = db["CLIENTES"]
+    result = clients_collection.update_one(
+        {"rif": rif, "estado_aprobacion": "pendiente"},
+        {"$set": {"estado_aprobacion": "aprobado"}}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado o ya no está pendiente")
+    return {"message": "Cliente aprobado. Ya puede iniciar sesión."}
+
+
+@router.patch("/clientes/{rif}/rechazar", summary="Rechazar solicitud de cliente (admin)")
+async def rechazar_cliente(rif: str, db: Database = Depends(get_db)):
+    """Rechaza un cliente; al intentar login verá mensaje de solicitud rechazada."""
+    clients_collection = db["CLIENTES"]
+    result = clients_collection.update_one(
+        {"rif": rif, "estado_aprobacion": "pendiente"},
+        {"$set": {"estado_aprobacion": "rechazado"}}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado o ya no está pendiente")
+    return {"message": "Solicitud rechazada."}
+
+
 @router.get("/clientes/all", 
             summary="Obtener todos los clientes (conversión manual)")
 async def get_all_clients_manual_conversion(db: Database = Depends(get_db)):
