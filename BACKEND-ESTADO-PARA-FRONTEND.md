@@ -2,6 +2,21 @@
 
 Este documento describe la API del backend (FastAPI en Render) para que el frontend estático (Vite) se conecte correctamente.
 
+**Para la IA del backend:** Ver instrucciones de mantenimiento en [docs/INSTRUCCIONES-PARA-IA-BACKEND.md](docs/INSTRUCCIONES-PARA-IA-BACKEND.md).
+
+### Rutas usadas por el frontend Virgen del Carmen
+
+| Método | Ruta | Uso |
+|--------|------|-----|
+| POST | `/login/` | Login cliente |
+| POST | `/register/` | Registro cliente |
+| POST | `/contacto` | Formulario de contacto |
+| POST | `/api/chat` | Chatbot |
+| GET | `/inventario_maestro/` | Catálogo |
+| GET | `/pedidos/por_cliente/{rif}` | Pedidos del cliente |
+| POST | `/reclamos/cliente` | Crear reclamo |
+| GET | `/reclamos/cliente/{rif}` | Listar reclamos |
+
 ---
 
 ## 1. Configuración base
