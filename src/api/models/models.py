@@ -6,6 +6,7 @@ from bson import ObjectId
 
 class Client(BaseModel):
     rif: str
+    empresa: Optional[str] = None  # Nombre de la empresa
     encargado: str
     direccion: str
     telefono: str
@@ -21,6 +22,7 @@ class Client(BaseModel):
 
 class ClientUpdate(BaseModel):
     rif: Optional[str] = None
+    empresa: Optional[str] = None
     encargado: Optional[str] = None
     direccion: Optional[str] = None
     telefono: Optional[str] = None
@@ -52,6 +54,7 @@ class UserRegister(BaseModel):
     email: str
     password: str
     rif: str
+    empresa: Optional[str] = None  # Nombre de la empresa
     direccion: str
     telefono: str
     encargado: str

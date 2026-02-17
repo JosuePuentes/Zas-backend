@@ -34,12 +34,13 @@ Este documento describe la API del backend (FastAPI en Render) para que el front
 ### 2.1 Registro de cliente (público)
 
 - **POST** `/register/`
-- **Body:** `UserRegister`
+- **Body:** `UserRegister` / `Client` (el endpoint usa Client). Incluye **empresa** (nombre de la empresa), opcional.
 ```json
 {
   "email": "string",
   "password": "string",
   "rif": "string",
+  "empresa": "string",
   "direccion": "string",
   "telefono": "string",
   "encargado": "string",
@@ -97,7 +98,7 @@ Este documento describe la API del backend (FastAPI en Render) para que el front
 
 | Método | Ruta | Descripción | Body / Params |
 |--------|------|-------------|----------------|
-| POST | `/clientes/` | Crear cliente | `Client`: rif, encargado, direccion, telefono, email, password, descripcion, dias_credito, limite_credito, activo, descuento1, descuento2, descuento3 |
+| POST | `/clientes/` | Crear cliente | `Client`: rif, empresa (opc.), encargado, direccion, telefono, email, password, descripcion, dias_credito, limite_credito, activo, descuento1, descuento2, descuento3 |
 | GET | `/clientes/all` | Listar todos (con `_id` como string) | — |
 | GET | `/clientes/` | Lista resumida (email, rif, encargado) | — |
 | GET | `/clientes/{rif}` | Cliente por RIF | Path: `rif` |
