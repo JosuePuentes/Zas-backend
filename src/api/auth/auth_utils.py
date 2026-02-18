@@ -2,6 +2,7 @@ from passlib.context import CryptContext
 from datetime import datetime, timedelta
 import os
 import jwt
+from fastapi import HTTPException
 
 SECRET_KEY = os.getenv("SECRET_KEY")
 ALGORITHM = "HS256"
@@ -36,3 +37,16 @@ def create_admin_access_token(admin: dict, expires_delta: timedelta = timedelta(
     }
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
+
+
+def verify_admin_token(token: str) -> dict:
+    """Decode and verify JWT; payload must contain 'usuario' (admin). Raises exception if invalid."""
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        if "usuario" not in payload:
+            raise HTTPException(status_code=401, detail="Token no es de administrador")
+        return payload
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token expirado")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Token inválido")

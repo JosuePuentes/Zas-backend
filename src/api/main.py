@@ -22,6 +22,7 @@ from .routes.listas_comparativas import router as listas_comparativas_router
 from .routes.gastos import router as gastos_router
 from .routes.finanzas import router as finanzas_router
 from .routes.cierre_diario import router as cierre_diario_router
+from .routes.bcv import router as bcv_router
 from pydantic import BaseModel, EmailStr
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
@@ -86,6 +87,7 @@ app.include_router(listas_comparativas_router)
 app.include_router(gastos_router)
 app.include_router(finanzas_router)
 app.include_router(cierre_diario_router)
+app.include_router(bcv_router, tags=["BCV"])
 
 from .models.models import (
     Client, ProductoInventario, UserRegister, UserLogin, UserAdminRegister, AdminLogin,

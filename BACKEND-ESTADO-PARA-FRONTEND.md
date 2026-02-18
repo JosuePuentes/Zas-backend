@@ -369,7 +369,18 @@ Rutas completas (el router tiene prefix `/pedidos`, las rutas del router empieza
 
 ---
 
-## 25. Resumen para el frontend Vite
+## 25. Tasa BCV
+
+| Método | Ruta   | Auth   | Descripción |
+|--------|--------|--------|-------------|
+| GET    | `/bcv/` | Público | Devuelve `{ "tasa": number }` (tasa actual en USD; Bs = $ × tasa). |
+| PUT    | `/bcv/` | Admin (Bearer) | Body: `{ "tasa": number }` (también acepta `rate` o `valor`). Respuesta: `{ "ok": true, "message": "Tasa BCV actualizada" }`. |
+
+Referencia: `docs/BACKEND-BCV.md`.
+
+---
+
+## 26. Resumen para el frontend Vite
 
 1. **Variable de entorno:** `VITE_API_URL` = base del backend (ej: `https://droclven-back.onrender.com`).
 2. **Llamadas:** `fetch(\`${import.meta.env.VITE_API_URL}/ruta\`, { method, headers: { "Content-Type": "application/json", "Authorization": "Bearer " + token }, body: JSON.stringify(...) })`.
