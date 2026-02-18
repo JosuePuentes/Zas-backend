@@ -102,10 +102,13 @@ Cada petición usa la base correspondiente a su Origin; no hace falta un Render 
 {
   "access_token": "string",
   "token_type": "bearer",
+  "role": "admin",
+  "rol": "string",
   "modulos": ["string"],
   "usuario": "string"
 }
 ```
+- **role** siempre es `"admin"` para identificar al usuario como administrador. **rol** es el rol guardado en BD (ej: `"master"`, `"admin"`).
 
 ---
 

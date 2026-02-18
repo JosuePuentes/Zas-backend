@@ -21,7 +21,7 @@ El backend ya tiene el endpoint. Desde Postman, Thunder Client, curl o cualquier
 }
 ```
 
-Ajusta `usuario`, `password` y la lista `modulos` según necesites. Con eso el admin puede hacer login en **POST** `/login/admin/` con `usuario` y `password` (no email). El frontend debe tener una pantalla de login para el área administrativa que use `/login/admin/` y guarde el token para las peticiones del panel admin.
+Ajusta `usuario`, `password` y la lista `modulos` según necesites. Con eso el admin puede hacer login en **POST** `/login/admin/` con `usuario` y `password` (no email). La respuesta incluye **role: "admin"** (y **rol**, **modulos**, **usuario**) para que el frontend sepa que es administrador y redirija al área admin. El frontend debe tener una pantalla de login para el área administrativa que use `/login/admin/` y guarde el token para las peticiones del panel admin.
 
 ---
 

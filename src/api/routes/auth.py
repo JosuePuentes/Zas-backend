@@ -69,7 +69,9 @@ async def admin_login(admin: AdminLogin, db: Database = Depends(get_db)):
     return {
         "access_token": access_token,
         "token_type": "bearer",
-        "modulos": db_admin["modulos"],
+        "role": "admin",
+        "rol": db_admin.get("rol", "admin"),
+        "modulos": db_admin.get("modulos", []),
         "usuario": db_admin["usuario"]
     }
 

@@ -32,7 +32,8 @@ El frontend **Virgen del Carmen** (Vite + React) está conectado al backend Fast
    - `PATCH /clientes/{rif}/rechazar` — (Admin) Rechazar cliente
 
 4. **Formato de respuestas:**
-   - **Login:** `{ "access_token": "...", "rif": "...", "role": "client" }` (y los demás campos que ya devuelve el backend)
+   - **Login cliente:** `{ "access_token": "...", "rif": "...", "role": "client" }` (y los demás campos que ya devuelve el backend)
+   - **Login admin:** `{ "access_token": "...", "usuario": "...", "role": "admin", "rol": "...", "modulos": [] }` — incluir siempre **role: "admin"** para que el frontend sepa que es administrador.
    - **Errores:** usar `detail` (string o lista)
    - **IDs de MongoDB:** devolver `_id` como string
 
