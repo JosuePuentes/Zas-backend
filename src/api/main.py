@@ -79,23 +79,25 @@ from .database import (
 # ===============================================
 #          SETUP: Crear usuario master (una vez)
 # ===============================================
-# En Render agrega variable: CREAR_MASTER_KEY = una clave secreta (ej: miclave123)
-# Luego abre en el navegador: https://tu-backend.onrender.com/setup/crear-master?key=miclave123
-# Crea usuario "master" / "Holaboba1." en DROCOLVEN y VIRGENCARMEN. Después puedes quitar CREAR_MASTER_KEY.
+# En Render agrega variable: CREAR_MASTER_KEY = la clave que quieras (será también la contraseña del usuario master).
+# Luego abre: https://tu-backend.onrender.com/setup/crear-master?key=ESA_MISMA_CLAVE
+# Crea o actualiza usuario "master" en DROCOLVEN y VIRGENCARMEN con esa contraseña. Después puedes quitar CREAR_MASTER_KEY.
 @app.get("/setup/crear-master")
 def crear_usuario_master(key: Optional[str] = None):
     secret = os.getenv("CREAR_MASTER_KEY")
     if not secret or key != secret:
         return {"error": "Acceso no autorizado. Usa ?key=tu_clave (la que pusiste en CREAR_MASTER_KEY)."}
     USUARIO = "master"
-    PASSWORD_PLAIN = "Holaboba1."
-    password_hash = get_password_hash(PASSWORD_PLAIN)
+    # La contraseña del usuario master es la misma que CREAR_MASTER_KEY (lo que pusiste en la variable de entorno).
+    password_hash = get_password_hash(secret)
     doc = {"usuario": USUARIO, "password": password_hash, "rol": "master", "modulos": ["solicitudes_clientes", "pedidos", "inventario", "clientes"]}
     resultados = []
     for nombre_db in ["DROCOLVEN", "VIRGENCARMEN"]:
         col = mongo_client[nombre_db]["usuarios_admin"]
-        if col.find_one({"usuario": USUARIO}):
-            resultados.append(f"{nombre_db}: usuario 'master' ya existía.")
+        existente = col.find_one({"usuario": USUARIO})
+        if existente:
+            col.update_one({"usuario": USUARIO}, {"$set": {"password": password_hash, "rol": "master", "modulos": doc["modulos"]}})
+            resultados.append(f"{nombre_db}: usuario 'master' ya existía; contraseña actualizada.")
         else:
             col.insert_one(doc)
             resultados.append(f"{nombre_db}: usuario 'master' creado.")
