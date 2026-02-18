@@ -1,9 +1,10 @@
 from fastapi import APIRouter, HTTPException, Body, status, Depends
+from typing import Optional
 from fastapi.responses import JSONResponse
 from bson import ObjectId
 from pymongo.database import Database
 from ..database import get_db
-from ..models.models import Client, ClientUpdate
+from ..models.models import Client, ClientUpdate, AprobarClienteBody
 from ..auth.auth_utils import get_password_hash
 import traceback
 
@@ -43,12 +44,20 @@ async def listar_solicitudes_pendientes(db: Database = Depends(get_db)):
 
 
 @router.patch("/clientes/{rif}/aprobar", summary="Aprobar solicitud de cliente (admin)")
-async def aprobar_cliente(rif: str, db: Database = Depends(get_db)):
-    """Aprueba un cliente; podrá hacer login y tener acceso completo."""
+async def aprobar_cliente(rif: str, body: Optional[AprobarClienteBody] = Body(None), db: Database = Depends(get_db)):
+    """Aprueba un cliente; podrá hacer login. Body opcional: limite_credito, dias_credito, monto."""
     clients_collection = db["CLIENTES"]
+    update = {"estado_aprobacion": "aprobado"}
+    if body:
+        if body.limite_credito is not None:
+            update["limite_credito"] = body.limite_credito
+        if body.dias_credito is not None:
+            update["dias_credito"] = body.dias_credito
+        if body.monto is not None:
+            update["limite_credito"] = body.monto
     result = clients_collection.update_one(
         {"rif": rif, "estado_aprobacion": "pendiente"},
-        {"$set": {"estado_aprobacion": "aprobado"}}
+        {"$set": update}
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Cliente no encontrado o ya no está pendiente")
@@ -92,15 +101,6 @@ async def get_all_clients_manual_conversion(db: Database = Depends(get_db)):
     # 5. Devolvemos la lista formateada usando JSONResponse
     return JSONResponse(content=clients_list, status_code=status.HTTP_200_OK)
 
-@router.get("/clientes/{rif}")
-async def read_client(rif: str, db: Database = Depends(get_db)):
-    clients_collection = db["CLIENTES"]
-    client = clients_collection.find_one({"rif": rif})
-    if client:
-        client["_id"] = str(client["_id"])
-        return client
-    raise HTTPException(status_code=404, detail="Cliente no encontrado")
-
 @router.patch("/clientes/{rif}")
 async def update_client(rif: str, client: ClientUpdate, db: Database = Depends(get_db)):
     clients_collection = db["CLIENTES"]
@@ -133,25 +133,42 @@ async def obtener_clientes(db: Database = Depends(get_db)):
 
 @router.get("/clientes/{rif}")
 async def obtener_cliente_por_rif(rif: str, db: Database = Depends(get_db)):
+    """Detalle del cliente. Incluye limite_credito, limite_consumido, facturas_vencidas para validación admin."""
     try:
         clients_collection = db["CLIENTES"]
+        pedidos_collection = db.get("PEDIDOS") or db["PEDIDOS"]
         cliente = clients_collection.find_one({"rif": rif})
         if not cliente:
             return JSONResponse(content={"error": "Cliente no encontrado"}, status_code=404)
         cliente["_id"] = str(cliente["_id"])
-        cliente = {
+        limite_credito = float(cliente.get("limite_credito", 0))
+        # Limite consumido: suma de totales de pedidos facturados no pagados (simplificado: pedidos en estado para_facturar/facturando/enviado/entregado)
+        limite_consumido = 0.0
+        try:
+            pedidos_cliente = list(pedidos_collection.find({"rif": rif, "estado": {"$in": ["para_facturar", "facturando", "enviado", "entregado"]}}))
+            limite_consumido = sum(float(p.get("total", 0)) for p in pedidos_cliente)
+        except Exception:
+            pass
+        # Facturas vencidas: si tiene dias_credito y pedidos antiguos sin pagar (simplificado: siempre False si no hay módulo facturas)
+        tiene_facturas_vencidas = False
+        out = {
             "_id": cliente["_id"],
             "email": cliente.get("email", ""),
             "rif": cliente.get("rif", ""),
+            "empresa": cliente.get("empresa", ""),
             "encargado": cliente.get("encargado", ""),
             "direccion": cliente.get("direccion", ""),
             "telefono": cliente.get("telefono", ""),
             "activo": cliente.get("activo", True),
             "descuento1": float(cliente.get("descuento1", 0)),
             "descuento2": float(cliente.get("descuento2", 0)),
-            "descuento3": float(cliente.get("descuento3", 0))
+            "descuento3": float(cliente.get("descuento3", 0)),
+            "limite_credito": limite_credito,
+            "limite_consumido": limite_consumido,
+            "dias_credito": cliente.get("dias_credito", 0),
+            "facturas_vencidas": tiene_facturas_vencidas,
         }
-        return JSONResponse(content=cliente, status_code=200)
+        return JSONResponse(content=out, status_code=200)
     except Exception as e:
         print(f"Error al obtener cliente por RIF: {str(e)}")
         print(f"Traceback: {traceback.format_exc()}")

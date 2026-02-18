@@ -118,11 +118,11 @@ Cada petición usa la base correspondiente a su Origin; no hace falta un Render 
 |--------|------|-------------|----------------|
 | POST | `/clientes/` | Crear cliente | `Client`: rif, empresa (opc.), encargado, direccion, telefono, email, password, descripcion, dias_credito, limite_credito, activo, descuento1, descuento2, descuento3. Se guarda con `estado_aprobacion: "pendiente"`. |
 | GET | `/clientes/solicitudes/pendientes` | **(Admin)** Listar solicitudes pendientes | —. Respuesta: array con `_id`, `empresa`, `rif`, `telefono`, `encargado`, `email`, `direccion`, `estado_aprobacion`. |
-| PATCH | `/clientes/{rif}/aprobar` | **(Admin)** Aprobar cliente; podrá hacer login | Path: rif. Respuesta: `{ "message": "Cliente aprobado. Ya puede iniciar sesión." }`. |
+| PATCH | `/clientes/{rif}/aprobar` | **(Admin)** Aprobar cliente; podrá hacer login | Path: rif. Body opcional: `{ "limite_credito", "dias_credito", "monto" }`. |
 | PATCH | `/clientes/{rif}/rechazar` | **(Admin)** Rechazar solicitud | Path: rif. Respuesta: `{ "message": "Solicitud rechazada." }`. |
 | GET | `/clientes/all` | Listar todos (con `_id` como string) | — |
 | GET | `/clientes/` | Lista resumida (email, rif, encargado) | — |
-| GET | `/clientes/{rif}` | Cliente por RIF | Path: `rif` |
+| GET | `/clientes/{rif}` | Cliente por RIF (incl. limite_credito, limite_consumido, facturas_vencidas) | Path: `rif` |
 | PATCH | `/clientes/{rif}` | Actualizar cliente | Parcial: encargado, direccion, telefono, email, password, etc. (todos opcionales) |
 | DELETE | `/clientes/{rif}` | Eliminar cliente | Path: `rif` |
 
@@ -142,7 +142,7 @@ Cada petición usa la base correspondiente a su Origin; no hace falta un Render 
 | GET | `/pedido/{pedido_id}` | Un pedido por ID | Path: pedido_id (ObjectId string) |
 | GET | `/pedidos/por_cliente/{rif}` | Pedidos de un cliente | Path: rif |
 | POST | `/pedidos/armados/` | Registrar pedido armado | `PedidoArmado`: cliente, rif, observacion, total, productos |
-| PUT | `/pedidos/actualizar_estado/{pedido_id}` | Cambiar estado | Body: `{ "nuevo_estado": "string", "verificaciones": {}, "usuario": "string" }` |
+| PUT | `/pedidos/actualizar_estado/{pedido_id}` | Cambiar estado | Body: `{ "nuevo_estado", "verificaciones"?, "usuario"?, "pin"? }` (pin para validación con facturas vencidas) |
 | PATCH | `/pedidos/actualizar_cantidades/{pedido_id}` | Actualizar cantidades encontradas | Body: `{ "cantidades": { "codigo_producto": cantidad } }` |
 | PATCH | `/pedidos/actualizar_picking/{pedido_id}` | Actualizar info picking | Body: PickingInfo (usuario, fechainicio_picking, fechafin_picking, estado_picking) |
 | PATCH | `/pedidos/actualizar_packing/{pedido_id}` | Actualizar packing | Body: PackingInfo |
@@ -253,12 +253,123 @@ Rutas completas (el router tiene prefix `/pedidos`, las rutas del router empieza
 
 ## 13. Usuario admin (actualización)
 
-- **PUT** `/admin/usuarios/{usuario}`  
-  Body (parcial): `{ "usuario", "password", "rol", "modulos", "nombreCompleto", "identificador" }`
+- **GET** `/usuarios/admin/` — Listar usuarios admin (cada item: _id, usuario, nombre, rol, modulos; sin password).
+- **PATCH** `/usuarios/admin/{id}` — Actualizar por _id. Body: `{ "modulos"?, "rol"?, "nombre"?, "telefono"?, "password"? }`.
+- **PUT** `/admin/usuarios/{usuario}` — Actualizar por nombre usuario. Body (parcial): `{ "usuario", "password", "rol", "modulos", "nombreCompleto", "nombre", "telefono", "identificador" }`.
 
 ---
 
-## 14. Resumen para el frontend Vite
+## 14. Control de fallas (productos faltantes)
+
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| GET | `/fallas/` | Listar productos con cantidad_pedida > cantidad_encontrada. Query opcional: `?pedido_id=...`. Cada item: pedido_id, item_index, codigo, descripcion, cantidad_pedida, cantidad_encontrada, proveedor_id, proveedor_empresa, precio_venta. |
+| PATCH | `/fallas/{pedido_id}` | Actualizar proveedor_id y/o precio_venta de un item faltante. Body: `{ "proveedor_id"?, "precio_venta"? }`. Query opcional: `?item_index=...`. |
+
+---
+
+## 15. Cuentas por cobrar
+
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| GET | `/cuentas-por-cobrar/vigentes` | Facturas con días de crédito restantes (numero, cliente, rif, monto, fecha_emision, dias_restantes, fecha_vencimiento). |
+| GET | `/cuentas-por-cobrar/vencidas` | Facturas vencidas (dias_vencidos, etc.). |
+| GET | `/cuentas-por-cobrar/total` | `{ "total" }` monto total por cobrar. |
+
+---
+
+## 16. Cuentas por pagar
+
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| GET | `/cuentas-por-pagar/` | Obligaciones con proveedores (proveedor_empresa, proveedor_rif, concepto, monto, fecha_vencimiento, dias_credito). |
+| GET | `/cuentas-por-pagar/total` | `{ "total" }` monto total por pagar. |
+
+---
+
+## 17. Facturas finalizadas
+
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| GET | `/facturas/top-clientes` | Top 10 clientes (cliente, rif, total, cantidad_pedidos). |
+| GET | `/facturas/clientes-poco-frecuentes` | Clientes poco frecuentes (cliente, rif, ultimo_pedido, dias_sin_comprar). |
+| GET | `/facturas/pagadas` | Facturas pagadas (numero, cliente, rif, monto, fecha_pago). |
+
+---
+
+## 18. Proveedores
+
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| GET | `/proveedores/` | Listar proveedores. |
+| POST | `/proveedores/` | Crear. Body: rif, empresa, dias_credito, condiciones_comerciales (%), pronto_pago_porcentaje (%). |
+| PUT | `/proveedores/{id}` | Actualizar. |
+| DELETE | `/proveedores/{id}` | Eliminar. |
+
+---
+
+## 19. Compras
+
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| POST | `/compras/totalizar` | Body: `{ "proveedor_id", "productos": [{ "codigo", "cantidad" }] }`. Suma cantidades al inventario. |
+
+---
+
+## 20. Órdenes de compra
+
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| GET | `/ordenes-compra/` | Listar (proveedor_empresa, proveedor_rif, total, totalizada, fecha). |
+| POST | `/ordenes-compra/` | Crear. Body: proveedor_id, proveedor_rif?, productos: [{ codigo, descripcion?, costo?, cantidad }], total. |
+| GET | `/ordenes-compra/{id}` | Detalle. |
+| PUT | `/ordenes-compra/{id}` | Actualizar productos y total. |
+| POST | `/ordenes-compra/{id}/totalizar` | Marcar totalizada y sumar cantidades al inventario. |
+
+---
+
+## 21. Lista comparativa
+
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| GET | `/listas-comparativas/` | Listar listas por proveedor. |
+| GET | `/listas-comparativas/productos` | Todos los productos de todas las listas (precio_final con descuento). |
+| POST | `/listas-comparativas/upload` | FormData: file (Excel), proveedor_id. Columnas: codigo, descripcion, marca, precio, existencia. |
+
+---
+
+## 22. Dashboard finanzas
+
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| GET | `/finanzas/resumen` | `{ productos_vendidos, valor_vendido, utilidad }`. |
+| GET | `/finanzas/top-productos?tipo=mas` | Top 10 más vendidos. |
+| GET | `/finanzas/top-productos?tipo=menos` | Top 10 menos vendidos. |
+| GET | `/finanzas/graficas` | Array `{ mes, valor }` por mes. |
+| GET | `/finanzas/gastos` | `{ total }` gastos. |
+
+---
+
+## 23. Gastos
+
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| POST | `/gastos/` | Registrar. Body: monto, descripcion?, fecha?, categoria?. |
+| GET | `/gastos/?desde=YYYY-MM-DD&hasta=YYYY-MM-DD` | Listar con filtros. |
+| DELETE | `/gastos/{id}` | Eliminar. |
+
+---
+
+## 24. Cierre diario
+
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| GET | `/cierre-diario/?fecha=YYYY-MM-DD` | Resumen del día. |
+| GET | `/cierre-diario/?desde=YYYY-MM-DD&hasta=YYYY-MM-DD` | Resumen por rango. Respuesta: productos_vendidos, cantidad_clientes, monto_total, gastos, utilidad. |
+
+---
+
+## 25. Resumen para el frontend Vite
 
 1. **Variable de entorno:** `VITE_API_URL` = base del backend (ej: `https://droclven-back.onrender.com`).
 2. **Llamadas:** `fetch(\`${import.meta.env.VITE_API_URL}/ruta\`, { method, headers: { "Content-Type": "application/json", "Authorization": "Bearer " + token }, body: JSON.stringify(...) })`.

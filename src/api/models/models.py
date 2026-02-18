@@ -174,12 +174,14 @@ class ReclamoCliente(BaseModel):
     fecha: str = ""
 
 class UserAdmin(BaseModel):
-    usuario: str
+    usuario: Optional[str] = None
     password: Optional[str] = None
     rol: Optional[str] = None
     modulos: Optional[List[str]] = None
-    nombreCompleto: str = None
-    identificador: str = None
+    nombreCompleto: Optional[str] = None
+    nombre: Optional[str] = None
+    telefono: Optional[str] = None
+    identificador: Optional[str] = None
 
 class FacturacionInfo(BaseModel):
     usuario: Optional[str] = None
@@ -285,10 +287,17 @@ class CheckPickingData(BaseModel):
     nuevo_estado: str
     verificaciones: dict[str, VerificacionCheckPicking]
 
+class AprobarClienteBody(BaseModel):
+    """Body opcional para PATCH /clientes/{rif}/aprobar."""
+    limite_credito: Optional[float] = None
+    dias_credito: Optional[int] = None
+    monto: Optional[float] = None
+
 class ActualizarEstadoPedido(BaseModel):
     nuevo_estado: str
     verificaciones: Optional[dict] = None
     usuario: Optional[str] = None
+    pin: Optional[str] = None
 
 class FinalizarCheckPicking(BaseModel):
     verificaciones: dict
@@ -296,3 +305,44 @@ class FinalizarCheckPicking(BaseModel):
 
 class ValidacionPedido(BaseModel):
     pin: str = Field(..., description="PIN de validación para cambiar estado del pedido")
+
+
+class Proveedor(BaseModel):
+    rif: str
+    empresa: str
+    dias_credito: Optional[int] = 0
+    condiciones_comerciales: Optional[float] = 0  # %
+    pronto_pago_porcentaje: Optional[float] = 0  # %
+
+
+class ProductoCompra(BaseModel):
+    codigo: str
+    cantidad: int
+    descripcion: Optional[str] = None
+    costo: Optional[float] = None
+
+
+class CompraTotalizar(BaseModel):
+    proveedor_id: str
+    productos: List[dict]  # [{ codigo, cantidad }]
+
+
+class ProductoOrdenCompra(BaseModel):
+    codigo: str
+    descripcion: Optional[str] = None
+    costo: Optional[float] = None
+    cantidad: int
+
+
+class OrdenCompraCreate(BaseModel):
+    proveedor_id: str
+    proveedor_rif: Optional[str] = None
+    productos: List[ProductoOrdenCompra]
+    total: float
+
+
+class GastoCreate(BaseModel):
+    monto: float
+    descripcion: Optional[str] = None
+    fecha: Optional[str] = None
+    categoria: Optional[str] = None

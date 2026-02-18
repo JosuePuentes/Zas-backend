@@ -77,6 +77,34 @@ async def admin_login(admin: AdminLogin, db: Database = Depends(get_db)):
         "usuario": db_admin["usuario"]
     }
 
+@router.get("/usuarios/admin/")
+async def listar_usuarios_admin(db: Database = Depends(get_db)):
+    """Listar todos los usuarios admin. Cada item: _id, usuario, nombre, rol, modulos (sin password)."""
+    usuarios_admin_collection = db["usuarios_admin"]
+    usuarios = list(usuarios_admin_collection.find({}, {"password": 0}))
+    for u in usuarios:
+        u["_id"] = str(u["_id"])
+    return usuarios
+
+@router.patch("/usuarios/admin/{id}")
+async def actualizar_usuario_admin(id: str, update: UserAdmin, db: Database = Depends(get_db)):
+    """Actualizar permisos y datos del usuario admin por _id. Body: modulos, rol?, nombre?, telefono?, password?."""
+    from bson import ObjectId
+    from bson.errors import InvalidId
+    try:
+        oid = ObjectId(id)
+    except InvalidId:
+        raise HTTPException(status_code=400, detail="ID inválido")
+    usuarios_admin_collection = db["usuarios_admin"]
+    existing = usuarios_admin_collection.find_one({"_id": oid})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Usuario administrativo no encontrado")
+    update_data = update.dict(exclude_unset=True)
+    if "password" in update_data and update_data["password"]:
+        update_data["password"] = get_password_hash(update_data["password"])
+    usuarios_admin_collection.update_one({"_id": oid}, {"$set": update_data})
+    return {"message": "Usuario actualizado correctamente"}
+
 @router.put("/admin/usuarios/{usuario}")
 async def update_admin_user(usuario: str, update: UserAdmin, db: Database = Depends(get_db)):
     usuarios_admin_collection = db["usuarios_admin"]

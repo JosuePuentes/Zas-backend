@@ -11,6 +11,17 @@ from .routes.transaccion import router as transaccion_router
 from .routes.formato_impresion import router as formato_impresion_router
 from .routes.facturacion_dinamica import router as facturacion_dinamica_router
 from .routes.punto_venta import router as punto_venta_router
+from .routes.fallas import router as fallas_router
+from .routes.cuentas_por_cobrar import router as cuentas_por_cobrar_router
+from .routes.cuentas_por_pagar import router as cuentas_por_pagar_router
+from .routes.facturas import router as facturas_router
+from .routes.proveedores import router as proveedores_router
+from .routes.compras import router as compras_router
+from .routes.ordenes_compra import router as ordenes_compra_router
+from .routes.listas_comparativas import router as listas_comparativas_router
+from .routes.gastos import router as gastos_router
+from .routes.finanzas import router as finanzas_router
+from .routes.cierre_diario import router as cierre_diario_router
 from pydantic import BaseModel, EmailStr
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
@@ -64,6 +75,17 @@ app.include_router(transaccion_router, prefix="/transaccion", tags=["Transaccion
 app.include_router(formato_impresion_router, prefix="/formatos-impresion", tags=["Formatos de Impresión"])
 app.include_router(facturacion_dinamica_router, prefix="/pedidos", tags=["Facturación Dinámica"])
 app.include_router(punto_venta_router, tags=["Punto de Venta"])
+app.include_router(fallas_router, tags=["Control de fallas"])
+app.include_router(cuentas_por_cobrar_router)
+app.include_router(cuentas_por_pagar_router)
+app.include_router(facturas_router)
+app.include_router(proveedores_router)
+app.include_router(compras_router)
+app.include_router(ordenes_compra_router)
+app.include_router(listas_comparativas_router)
+app.include_router(gastos_router)
+app.include_router(finanzas_router)
+app.include_router(cierre_diario_router)
 
 from .models.models import (
     Client, ProductoInventario, UserRegister, UserLogin, UserAdminRegister, AdminLogin,
