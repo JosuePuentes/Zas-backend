@@ -90,7 +90,8 @@ def crear_usuario_master(key: Optional[str] = None):
     USUARIO = "master"
     # La contraseña del usuario master es la misma que CREAR_MASTER_KEY (lo que pusiste en la variable de entorno).
     password_hash = get_password_hash(secret)
-    doc = {"usuario": USUARIO, "password": password_hash, "rol": "master", "modulos": ["solicitudes_clientes", "pedidos", "inventario", "clientes"]}
+    # Usuario master tiene modulos: ["master"] para que el frontend muestre todos los módulos
+    doc = {"usuario": USUARIO, "password": password_hash, "rol": "master", "modulos": ["master"]}
     resultados = []
     for nombre_db in ["DROCOLVEN", "VIRGENCARMEN"]:
         col = mongo_client[nombre_db]["usuarios_admin"]

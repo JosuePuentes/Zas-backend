@@ -76,4 +76,15 @@ class FacturaPreliminarData(BaseModel):
     campos_dinamicos: Dict[str, Any]
     plantilla_html: Optional[str] = None
 
+class FormatoImpresionSimplificado(BaseModel):
+    """Formato simplificado para crear/actualizar formatos de impresión desde el frontend."""
+    tipo: str
+    logo_url: Optional[str] = None
+    titulo: Optional[str] = None
+    mostrar_rif: Optional[bool] = True
+    mostrar_direccion: Optional[bool] = True
+    mostrar_telefono: Optional[bool] = True
+    campos_extra: Optional[Dict[str, Any]] = None
+    layout: Optional[Dict[str, Any]] = None
+
 

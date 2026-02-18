@@ -66,12 +66,14 @@ async def admin_login(admin: AdminLogin, db: Database = Depends(get_db)):
     if not verify_password(admin.password, db_admin["password"]):
         raise HTTPException(status_code=401, detail="Contraseña incorrecta")
     access_token = create_admin_access_token(db_admin)
+    modulos = db_admin.get("modulos", [])
+    # Si el usuario tiene modulos: ["master"] o ["*"], devolverlo tal cual para que el frontend muestre todos los módulos
     return {
         "access_token": access_token,
         "token_type": "bearer",
         "role": "admin",
         "rol": db_admin.get("rol", "admin"),
-        "modulos": db_admin.get("modulos", []),
+        "modulos": modulos,
         "usuario": db_admin["usuario"]
     }
 

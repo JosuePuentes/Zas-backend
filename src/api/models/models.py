@@ -68,6 +68,9 @@ class UserLogin(BaseModel):
     password: str
 
 class UserAdminRegister(BaseModel):
+    cedula: Optional[str] = None
+    nombre: Optional[str] = None
+    telefono: Optional[str] = None
     usuario: str
     password: str
     rol: str

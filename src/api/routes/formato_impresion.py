@@ -1,12 +1,12 @@
-from fastapi import APIRouter, HTTPException, Query, Path, Depends
+from fastapi import APIRouter, HTTPException, Query, Path, Depends, Body
 from fastapi.responses import JSONResponse
 from bson import ObjectId
 from bson.errors import InvalidId
 from pymongo.database import Database
 from ..database import get_db
-from ..models.formato_impresion import FormatoImpresion, FormatoImpresionCreate, FormatoImpresionUpdate, FacturaPreliminarData
+from ..models.formato_impresion import FormatoImpresion, FormatoImpresionCreate, FormatoImpresionUpdate, FacturaPreliminarData, FormatoImpresionSimplificado
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Union
 import json
 
 # Función helper para serializar fechas
@@ -27,6 +27,32 @@ def serializar_formato(formato):
         formato["fecha_actualizacion"] = formato["fecha_actualizacion"].strftime("%Y-%m-%d %H:%M:%S")
     
     return formato
+
+def convertir_formato_simplificado_a_interno(formato_simplificado: FormatoImpresionSimplificado) -> dict:
+    """Convierte FormatoImpresionSimplificado al formato interno del backend."""
+    configuracion_diseno = {
+        "mostrar_logo": True if formato_simplificado.logo_url else False,
+        "mostrar_direccion": formato_simplificado.mostrar_direccion if formato_simplificado.mostrar_direccion is not None else True,
+        "mostrar_telefono": formato_simplificado.mostrar_telefono if formato_simplificado.mostrar_telefono is not None else True,
+        "logo_url": formato_simplificado.logo_url,
+        "titulo": formato_simplificado.titulo,
+    }
+    if formato_simplificado.layout:
+        configuracion_diseno.update(formato_simplificado.layout)
+    
+    datos_empresa = {}
+    if formato_simplificado.mostrar_rif is not None:
+        datos_empresa["mostrar_rif"] = formato_simplificado.mostrar_rif
+    
+    campos_dinamicos = formato_simplificado.campos_extra if formato_simplificado.campos_extra else {}
+    
+    return {
+        "tipo": formato_simplificado.tipo,
+        "datos_empresa": datos_empresa,
+        "configuracion_diseno": configuracion_diseno,
+        "campos_dinamicos": campos_dinamicos,
+        "activo": True
+    }
 
 router = APIRouter()
 
@@ -95,30 +121,41 @@ async def obtener_formato_por_tipo(tipo: str, db: Database = Depends(get_db)):
         raise HTTPException(status_code=500, detail=f"Error interno del servidor: {str(e)}")
 
 @router.post("/")
-async def crear_formato(formato_data: FormatoImpresionCreate, db: Database = Depends(get_db)):
+async def crear_formato(formato_data: Optional[FormatoImpresionCreate] = Body(None), formato_simplificado: Optional[FormatoImpresionSimplificado] = Body(None), db: Database = Depends(get_db)):
     """
     Crear nuevo formato de impresión.
+    Acepta FormatoImpresionCreate (formato completo) o FormatoImpresionSimplificado (formato simplificado desde frontend).
     """
     try:
+        # Determinar qué formato se está usando
+        if formato_simplificado:
+            # Convertir formato simplificado a formato interno
+            formato_dict = convertir_formato_simplificado_a_interno(formato_simplificado)
+            tipo_formato = formato_simplificado.tipo
+        elif formato_data:
+            formato_dict = formato_data.dict()
+            tipo_formato = formato_data.tipo
+        else:
+            raise HTTPException(status_code=400, detail="Debe proporcionar formato_data o formato_simplificado")
+        
         formatos_collection = db["formatos_impresion"]
         # Verificar que no exista un formato activo del mismo tipo
         formato_existente = formatos_collection.find_one({
-            "tipo": formato_data.tipo,
+            "tipo": tipo_formato,
             "activo": True
         })
         
         if formato_existente:
             raise HTTPException(
                 status_code=400,
-                detail=f"Ya existe un formato activo para el tipo '{formato_data.tipo}'"
+                detail=f"Ya existe un formato activo para el tipo '{tipo_formato}'"
             )
         
-        # Crear el formato
-        formato_dict = formato_data.dict()
+        # Añadir fechas
         formato_dict["fecha_creacion"] = datetime.now()
         formato_dict["fecha_actualizacion"] = datetime.now()
         
-        # Usar valores por defecto si no se proporcionan
+        # Usar valores por defecto si no se proporcionan (solo si se usó formato simplificado o faltan campos)
         if not formato_dict.get("datos_empresa"):
             formato_dict["datos_empresa"] = {
                 "nombre": "FARMA AMERICA (DANIEL)",
@@ -174,7 +211,7 @@ async def crear_formato(formato_data: FormatoImpresionCreate, db: Database = Dep
             
             return JSONResponse(
                 content={
-                    "message": f"Formato '{formato_data.tipo}' creado exitosamente",
+                    "message": f"Formato '{tipo_formato}' creado exitosamente",
                     "formato": formato_serializado
                 },
                 status_code=201
@@ -189,9 +226,10 @@ async def crear_formato(formato_data: FormatoImpresionCreate, db: Database = Dep
         raise HTTPException(status_code=500, detail=f"Error interno del servidor: {str(e)}")
 
 @router.put("/{tipo}")
-async def actualizar_formato(tipo: str, formato_data: FormatoImpresionUpdate, db: Database = Depends(get_db)):
+async def actualizar_formato(tipo: str, formato_data: Optional[FormatoImpresionUpdate] = Body(None), formato_simplificado: Optional[FormatoImpresionSimplificado] = Body(None), db: Database = Depends(get_db)):
     """
     Actualizar formato específico por tipo.
+    Acepta FormatoImpresionUpdate (formato completo) o FormatoImpresionSimplificado (formato simplificado desde frontend).
     """
     try:
         formatos_collection = db["formatos_impresion"]
@@ -207,11 +245,21 @@ async def actualizar_formato(tipo: str, formato_data: FormatoImpresionUpdate, db
         # Preparar datos de actualización
         update_data = {}
         
-        if formato_data.datos_empresa is not None:
-            update_data["datos_empresa"] = formato_data.datos_empresa
-        
-        if formato_data.configuracion_diseno is not None:
-            update_data["configuracion_diseno"] = formato_data.configuracion_diseno
+        if formato_simplificado:
+            # Convertir formato simplificado a formato interno y actualizar solo los campos proporcionados
+            formato_convertido = convertir_formato_simplificado_a_interno(formato_simplificado)
+            if formato_convertido.get("configuracion_diseno"):
+                update_data["configuracion_diseno"] = {**formato_existente.get("configuracion_diseno", {}), **formato_convertido["configuracion_diseno"]}
+            if formato_convertido.get("datos_empresa"):
+                update_data["datos_empresa"] = {**formato_existente.get("datos_empresa", {}), **formato_convertido["datos_empresa"]}
+            if formato_convertido.get("campos_dinamicos"):
+                update_data["campos_dinamicos"] = {**formato_existente.get("campos_dinamicos", {}), **formato_convertido["campos_dinamicos"]}
+        elif formato_data:
+            if formato_data.datos_empresa is not None:
+                update_data["datos_empresa"] = formato_data.datos_empresa
+            
+            if formato_data.configuracion_diseno is not None:
+                update_data["configuracion_diseno"] = formato_data.configuracion_diseno
         
         if formato_data.plantilla_html is not None:
             update_data["plantilla_html"] = formato_data.plantilla_html
