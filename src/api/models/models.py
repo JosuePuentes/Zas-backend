@@ -10,11 +10,11 @@ class Client(BaseModel):
     encargado: str
     direccion: str
     telefono: str
-    email: str
-    password: str
-    descripcion: str
-    dias_credito: int
-    limite_credito: float
+    email: Optional[str] = None  # Opcional: si no se envía, se genera automáticamente
+    password: Optional[str] = None  # Opcional: si no se envía, se genera automáticamente
+    descripcion: Optional[str] = ""
+    dias_credito: int = 0
+    limite_credito: float = 0
     activo: bool = True
     descuento1: float = 0
     descuento2: float = 0

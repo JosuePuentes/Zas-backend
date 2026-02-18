@@ -12,17 +12,57 @@ router = APIRouter()
 
 @router.post("/clientes/", response_model=Client, status_code=201)
 async def create_client(client: Client, db: Database = Depends(get_db)):
+    """
+    Crear cliente. Si no se envía email o password, se generan automáticamente.
+    Email generado: {rif}@cliente.local (o similar)
+    Password generado: {rif}123 (o similar)
+    """
     try:
         clients_collection = db["CLIENTES"]
-        client_dict = client.dict()
-        client_dict["password"] = get_password_hash(client_dict["password"])
         if clients_collection.find_one({"rif": client.rif}):
             raise HTTPException(status_code=400, detail="El RIF ya está registrado")
-        if clients_collection.find_one({"email": client.email}):
-            raise HTTPException(status_code=400, detail="El correo ya está registrado")
+        
+        client_dict = client.dict(exclude_none=True)
+        
+        # Generar email si no se proporciona
+        email_provided = client_dict.get("email")
+        if not email_provided:
+            # Email basado en RIF: quitar guiones y caracteres especiales, convertir a minúsculas
+            email_base = client.rif.replace("-", "").replace(".", "").lower()
+            client_dict["email"] = f"{email_base}@cliente.local"
+        
+        # Verificar que el email no esté duplicado
+        if clients_collection.find_one({"email": client_dict["email"]}):
+            if email_provided:
+                raise HTTPException(status_code=400, detail="El correo ya está registrado")
+            # Si el email generado ya existe, añadir sufijo
+            counter = 1
+            original_email = client_dict["email"]
+            while clients_collection.find_one({"email": client_dict["email"]}):
+                client_dict["email"] = f"{original_email.split('@')[0]}{counter}@cliente.local"
+                counter += 1
+        
+        # Generar password si no se proporciona
+        password_provided = client_dict.get("password")
+        if not password_provided:
+            # Password basado en RIF: primeros 6 caracteres del RIF sin guiones + "123"
+            password_base = client.rif.replace("-", "").replace(".", "")[:6].upper()
+            client_dict["password"] = f"{password_base}123"
+        
+        # Hashear la contraseña (tanto si se proporcionó como si se generó)
+        client_dict["password"] = get_password_hash(client_dict["password"])
+        
+        # Estado de aprobación
         client_dict["estado_aprobacion"] = "pendiente"
+        
         clients_collection.insert_one(client_dict)
-        return client
+        
+        # Devolver el cliente creado (sin password hasheada en la respuesta)
+        client_response = client_dict.copy()
+        client_response["password"] = ""  # No devolver password
+        return JSONResponse(content=client_response, status_code=201)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

@@ -8,11 +8,16 @@ router = APIRouter()
 
 @router.post("/register/")
 async def register(client: Client, db: Database = Depends(get_db)):
+    """Registro público: email y password son obligatorios."""
+    if not client.email:
+        raise HTTPException(status_code=400, detail="El correo es obligatorio")
+    if not client.password:
+        raise HTTPException(status_code=400, detail="La contraseña es obligatoria")
     clients_collection = db["CLIENTES"]
     if clients_collection.find_one({"email": client.email}):
         raise HTTPException(status_code=400, detail="Correo ya registrado")
     hashed_password = get_password_hash(client.password)
-    new_client = client.dict()
+    new_client = client.dict(exclude_none=True)
     new_client["password"] = hashed_password
     new_client["estado_aprobacion"] = "pendiente"  # Hasta que un admin apruebe
     result = clients_collection.insert_one(new_client)

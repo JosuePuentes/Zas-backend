@@ -48,7 +48,7 @@ Cada petición usa la base correspondiente a su Origin; no hace falta un Render 
 ### 2.1 Registro de cliente (público)
 
 - **POST** `/register/`
-- **Body:** `UserRegister` / `Client` (el endpoint usa Client). Incluye **empresa** (nombre de la empresa), opcional.
+- **Body:** `UserRegister` / `Client` (el endpoint usa Client). **email** y **password** son obligatorios en registro público. Incluye **empresa** (nombre de la empresa), opcional.
 ```json
 {
   "email": "string",
@@ -116,7 +116,7 @@ Cada petición usa la base correspondiente a su Origin; no hace falta un Render 
 
 | Método | Ruta | Descripción | Body / Params |
 |--------|------|-------------|----------------|
-| POST | `/clientes/` | Crear cliente | `Client`: rif, empresa (opc.), encargado, direccion, telefono, email, password, descripcion, dias_credito, limite_credito, activo, descuento1, descuento2, descuento3. Se guarda con `estado_aprobacion: "pendiente"`. |
+| POST | `/clientes/` | Crear cliente (admin) | `Client`: rif, empresa (opc.), encargado, direccion, telefono, **email** (opc., se genera si no se envía), **password** (opc., se genera si no se envía), descripcion, dias_credito, limite_credito, activo, descuento1, descuento2, descuento3. Se guarda con `estado_aprobacion: "pendiente"`. Si no se envía email/password, se generan automáticamente basados en el RIF. |
 | GET | `/clientes/solicitudes/pendientes` | **(Admin)** Listar solicitudes pendientes | —. Respuesta: array con `_id`, `empresa`, `rif`, `telefono`, `encargado`, `email`, `direccion`, `estado_aprobacion`. |
 | PATCH | `/clientes/{rif}/aprobar` | **(Admin)** Aprobar cliente; podrá hacer login | Path: rif. Body opcional: `{ "limite_credito", "dias_credito", "monto" }`. |
 | PATCH | `/clientes/{rif}/rechazar` | **(Admin)** Rechazar solicitud | Path: rif. Respuesta: `{ "message": "Solicitud rechazada." }`. |
