@@ -293,6 +293,11 @@ class AprobarClienteBody(BaseModel):
     dias_credito: Optional[int] = None
     monto: Optional[float] = None
 
+
+class RechazarClienteBody(BaseModel):
+    """Body obligatorio para PATCH /clientes/{rif}/rechazar. El motivo se guarda para informes."""
+    motivo: str
+
 class ActualizarEstadoPedido(BaseModel):
     nuevo_estado: str
     verificaciones: Optional[dict] = None

@@ -119,7 +119,8 @@ Cada petición usa la base correspondiente a su Origin; no hace falta un Render 
 | POST | `/clientes/` | Crear cliente (admin) | `Client`: rif, empresa (opc.), encargado, direccion, telefono, **email** (opc., se genera si no se envía), **password** (opc., se genera si no se envía), descripcion, dias_credito, limite_credito, activo, descuento1, descuento2, descuento3. Se guarda con `estado_aprobacion: "pendiente"`. Si no se envía email/password, se generan automáticamente basados en el RIF. |
 | GET | `/clientes/solicitudes/pendientes` | **(Admin)** Listar solicitudes pendientes | —. Respuesta: array con `_id`, `empresa`, `rif`, `telefono`, `encargado`, `email`, `direccion`, `estado_aprobacion`. |
 | PATCH | `/clientes/{rif}/aprobar` | **(Admin)** Aprobar cliente; podrá hacer login | Path: rif. Body opcional: `{ "limite_credito", "dias_credito", "monto" }`. |
-| PATCH | `/clientes/{rif}/rechazar` | **(Admin)** Rechazar solicitud | Path: rif. Respuesta: `{ "message": "Solicitud rechazada." }`. |
+| PATCH | `/clientes/{rif}/rechazar` | **(Admin)** Rechazar solicitud (motivo obligatorio) | Path: rif. Body: `{ "motivo": "string" }`. El motivo se guarda para informes. Respuesta: `{ "message": "Solicitud rechazada." }`. |
+| GET | `/clientes/solicitudes/historial` | **(Admin)** Historial de solicitudes (aprobadas/rechazadas) | —. Respuesta: array con `_id`, `empresa`, `rif`, `estado_aprobacion`, `motivo_rechazo` (si rechazado), etc. |
 | GET | `/clientes/all` | Listar todos (con `_id` como string) | — |
 | GET | `/clientes/` | Lista resumida (email, rif, encargado) | — |
 | GET | `/clientes/{rif}` | Cliente por RIF (incl. limite_credito, limite_consumido, facturas_vencidas) | Path: `rif` |
@@ -166,10 +167,11 @@ Cada petición usa la base correspondiente a su Origin; no hace falta un Render 
 | Método | Ruta | Descripción | Body / Params |
 |--------|------|-------------|----------------|
 | GET | `/inventario/` | Listar inventario | — |
-| GET | `/inventario_maestro/` | Inventario maestro | — |
+| GET | `/inventario_maestro/` | Inventario maestro | —. Incluye `stock_minimo`, `stock_maximo` por producto. |
 | GET | `/inventario_maestro/{id}` | Un producto por ID | Path: id |
-| PUT | `/inventario_maestro/{id}` | Actualizar producto | Body: campos a actualizar |
-| POST | `/subir_inventario/` | Carga de inventario (archivo/form) | Form/archivo según implementación |
+| POST | `/inventario_maestro/` | Crear producto | Body: codigo (requerido), descripcion, existencia, precio, dpto, nacional, laboratorio, fv, descuento1–3, **stock_minimo**, **stock_maximo** (opc.). |
+| PUT | `/inventario_maestro/{id}` | Actualizar producto | Body: campos a actualizar (incl. **stock_minimo**, **stock_maximo**). |
+| POST | `/subir_inventario/` | Carga de inventario (archivo/form) | Form/archivo. Excel puede incluir columnas **Stock_minimo**, **Stock_maximo**. |
 | POST | `/convenios/cargar` | Cargar convenios | Body: ConvenioCarga (fecha, usuario, descripcion, estado, clientes[], productos{codigo: precio}) |
 | POST | `/inventarios/upload-excel` | Subir Excel | — |
 | POST | `/inventarios/cargar-existencia` | Cargar existencia | — |

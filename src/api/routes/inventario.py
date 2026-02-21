@@ -61,14 +61,51 @@ async def obtener_inventario(db: Database = Depends(get_db)):
 
 @router.get("/inventario_maestro/")
 async def obtener_inventario_maestro(db: Database = Depends(get_db)):
-    productos = list(db["INVENTARIO_MAESTRO"].find({}, {"codigo": 1, "descripcion": 1, "existencia": 1, "precio": 1, "dpto": 1, "nacional": 1, "laboratorio": 1, "fv": 1, "descuento1": 1, "descuento2": 1, "descuento3": 1}))
+    proyeccion = {"codigo": 1, "descripcion": 1, "existencia": 1, "precio": 1, "dpto": 1, "nacional": 1, "laboratorio": 1, "fv": 1, "descuento1": 1, "descuento2": 1, "descuento3": 1, "stock_minimo": 1, "stock_maximo": 1}
+    productos = list(db["INVENTARIO_MAESTRO"].find({}, proyeccion))
     for prod in productos:
         prod["_id"] = str(prod["_id"])
         if 'fv' in prod:
             valor_fv = prod['fv']
             if isinstance(valor_fv, float) and math.isnan(valor_fv):
                 prod['fv'] = None
+        prod.setdefault("stock_minimo", None)
+        prod.setdefault("stock_maximo", None)
     return JSONResponse(content={"inventario_maestro": productos})
+
+
+@router.post("/inventario_maestro/", status_code=201)
+async def crear_producto_maestro(body: dict = Body(...), db: Database = Depends(get_db)):
+    """
+    Crear un producto en inventario maestro. Acepta stock_minimo y stock_maximo.
+    Campos: codigo (requerido), descripcion, existencia, precio, dpto, nacional, laboratorio, fv, descuento1, descuento2, descuento3, stock_minimo, stock_maximo.
+    """
+    codigo = body.get("codigo")
+    if not codigo:
+        raise HTTPException(status_code=400, detail="El campo codigo es requerido")
+    inventario_collection = db["INVENTARIO_MAESTRO"]
+    if inventario_collection.find_one({"codigo": str(codigo)}):
+        raise HTTPException(status_code=400, detail="Ya existe un producto con ese código")
+    producto = {
+        "codigo": str(codigo),
+        "descripcion": body.get("descripcion", ""),
+        "existencia": int(body.get("existencia", 0)),
+        "precio": float(body.get("precio", 0)),
+        "dpto": body.get("dpto", ""),
+        "nacional": body.get("nacional", ""),
+        "laboratorio": body.get("laboratorio", ""),
+        "fv": body.get("fv", ""),
+        "descuento1": float(body.get("descuento1", 0)),
+        "descuento2": float(body.get("descuento2", 0)),
+        "descuento3": float(body.get("descuento3", 0)),
+    }
+    if "stock_minimo" in body and body["stock_minimo"] is not None:
+        producto["stock_minimo"] = int(body["stock_minimo"])
+    if "stock_maximo" in body and body["stock_maximo"] is not None:
+        producto["stock_maximo"] = int(body["stock_maximo"])
+    resultado = inventario_collection.insert_one(producto)
+    return JSONResponse(content={"message": "Producto creado", "id": str(resultado.inserted_id)}, status_code=201)
+
 
 @router.post("/subir_inventario/")
 async def subir_inventario(file: UploadFile = File(...), db: Database = Depends(get_db)):
@@ -84,6 +121,16 @@ async def subir_inventario(file: UploadFile = File(...), db: Database = Depends(
             raise HTTPException(status_code=400, detail="Faltan columnas requeridas.")
 
         df = df.rename(columns={"f.v.": "fv"})
+        # Columnas opcionales para stock mínimo/máximo (acepta Stock_minimo, Stock_maximo, etc.)
+        rename_stock = {}
+        for col in list(df.columns):
+            c = str(col).strip().lower().replace(" ", "_")
+            if c in ("stock_minimo", "stockmínimo", "stockminimo"):
+                rename_stock[col] = "stock_minimo"
+            elif c in ("stock_maximo", "stockmáximo", "stockmaximo"):
+                rename_stock[col] = "stock_maximo"
+        if rename_stock:
+            df = df.rename(columns=rename_stock)
 
         # Limpieza y transformación de datos
         df["fv"] = pd.to_datetime(df["fv"], errors="coerce").dt.strftime('%d/%m/%Y')
@@ -116,6 +163,17 @@ async def subir_inventario(file: UploadFile = File(...), db: Database = Depends(
                 except (ValueError, TypeError):
                     producto["precio"] = 0.0
                     producto["precio_costo"] = 0.0
+            # Incluir stock_minimo y stock_maximo si vienen en el Excel
+            if "stock_minimo" in producto and producto["stock_minimo"] is not None:
+                try:
+                    producto["stock_minimo"] = int(float(producto["stock_minimo"]))
+                except (ValueError, TypeError):
+                    producto["stock_minimo"] = None
+            if "stock_maximo" in producto and producto["stock_maximo"] is not None:
+                try:
+                    producto["stock_maximo"] = int(float(producto["stock_maximo"]))
+                except (ValueError, TypeError):
+                    producto["stock_maximo"] = None
 
         # 1. Borra el inventario anterior (esto se mantiene)
         if productos: # Solo borrar si hay nuevos productos para cargar
@@ -241,7 +299,7 @@ async def obtener_producto_maestro(id: str, db: Database = Depends(get_db)):
 
 @router.put("/inventario_maestro/{id}")
 async def modificar_inventario_maestro(id: str, body: dict = Body(...), db: Database = Depends(get_db)):
-    campos_permitidos = {"codigo", "descripcion", "existencia", "precio", "dpto", "nacional", "laboratorio", "fv", "descuento1", "descuento2", "descuento3"}
+    campos_permitidos = {"codigo", "descripcion", "existencia", "precio", "dpto", "nacional", "laboratorio", "fv", "descuento1", "descuento2", "descuento3", "stock_minimo", "stock_maximo"}
     update_data = {k: v for k, v in body.items() if k in campos_permitidos}
     result = db["INVENTARIO_MAESTRO"].update_one({"_id": ObjectId(id)}, {"$set": update_data})
     if result.matched_count == 0:
@@ -449,6 +507,10 @@ async def agregar_items_inventario(inventario_id: str, body: dict = Body(...), d
                 "descuento2": item_data.get("descuento2", 0.0),
                 "descuento3": item_data.get("descuento3", 0.0),
             }
+            if "stock_minimo" in item_data and item_data["stock_minimo"] is not None:
+                producto["stock_minimo"] = int(item_data["stock_minimo"])
+            if "stock_maximo" in item_data and item_data["stock_maximo"] is not None:
+                producto["stock_maximo"] = int(item_data["stock_maximo"])
             
             # Calcular precio con utilidad del 40% si se proporciona precio_costo
             precio_costo = item_data.get("precio_costo")

@@ -4,7 +4,7 @@ from fastapi.responses import JSONResponse
 from bson import ObjectId
 from pymongo.database import Database
 from ..database import get_db
-from ..models.models import Client, ClientUpdate, AprobarClienteBody
+from ..models.models import Client, ClientUpdate, AprobarClienteBody, RechazarClienteBody
 from ..auth.auth_utils import get_password_hash
 import traceback
 
@@ -105,16 +105,33 @@ async def aprobar_cliente(rif: str, body: Optional[AprobarClienteBody] = Body(No
 
 
 @router.patch("/clientes/{rif}/rechazar", summary="Rechazar solicitud de cliente (admin)")
-async def rechazar_cliente(rif: str, db: Database = Depends(get_db)):
-    """Rechaza un cliente; al intentar login verá mensaje de solicitud rechazada."""
+async def rechazar_cliente(rif: str, body: RechazarClienteBody = Body(...), db: Database = Depends(get_db)):
+    """Rechaza un cliente con motivo obligatorio; el motivo se guarda para informes."""
     clients_collection = db["CLIENTES"]
     result = clients_collection.update_one(
         {"rif": rif, "estado_aprobacion": "pendiente"},
-        {"$set": {"estado_aprobacion": "rechazado"}}
+        {"$set": {"estado_aprobacion": "rechazado", "motivo_rechazo": body.motivo.strip()}}
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Cliente no encontrado o ya no está pendiente")
     return {"message": "Solicitud rechazada."}
+
+
+@router.get("/clientes/solicitudes/historial", summary="Historial de solicitudes aprobadas/rechazadas (admin)")
+async def listar_solicitudes_historial(db: Database = Depends(get_db)):
+    """
+    Devuelve clientes con estado_aprobacion aprobado o rechazado, con motivo_rechazo cuando aplique.
+    Para informes de solicitudes.
+    """
+    clients_collection = db["CLIENTES"]
+    solicitudes = list(clients_collection.find(
+        {"estado_aprobacion": {"$in": ["aprobado", "rechazado"]}},
+        {"_id": 1, "empresa": 1, "rif": 1, "telefono": 1, "encargado": 1, "email": 1, "direccion": 1, "estado_aprobacion": 1, "motivo_rechazo": 1, "limite_credito": 1, "dias_credito": 1}
+    ))
+    for s in solicitudes:
+        s["_id"] = str(s["_id"])
+        s.setdefault("motivo_rechazo", None)
+    return JSONResponse(content=solicitudes, status_code=200)
 
 
 @router.get("/clientes/all", 
