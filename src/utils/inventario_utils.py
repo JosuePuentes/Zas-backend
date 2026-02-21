@@ -27,6 +27,34 @@ def calcular_precio_con_utilidad_40(precio_costo: float) -> float:
     return round(precio_venta, 2)
 
 
+def precio_desde_costo_y_utilidad(costo: float, utilidad_pct: float) -> float:
+    """
+    Precio de venta dado costo y utilidad (% sobre precio de venta, utilidad comercial/contable).
+    Fórmula: precio = costo / (1 - utilidad_pct/100).
+    Ejemplo: costo $1, utilidad 30% → precio = 1 / 0.70 = 1.43 (no 1.30).
+    """
+    if costo is None or costo <= 0:
+        return 0.0
+    try:
+        u = float(utilidad_pct)
+        if u >= 100:
+            return 0.0
+        return round(costo / (1 - u / 100), 2)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def utilidad_pct_desde_precio_y_costo(precio: float, costo: float) -> float:
+    """Utilidad % sobre precio (margen): (1 - costo/precio)*100. Para informe como porcentaje."""
+    if precio is None or precio <= 0:
+        return 0.0
+    try:
+        c = float(costo) if costo is not None else 0
+        return round((1 - c / precio) * 100, 2)
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def calcular_precio_con_utilidad_40_alternativa(precio_costo: float) -> float:
     """
     Alternativa: Calcula el precio de venta agregando 40% al costo

@@ -20,7 +20,7 @@
 
 - **marca**: string (opcional).
 - **costo**: número; precio de costo.
-- **utilidad**: número; porcentaje de utilidad (ej. 40 = 40%). Fórmula: `precio = costo × (1 + utilidad / 100)`.
+- **utilidad**: número; porcentaje de utilidad sobre el precio de venta (utilidad comercial/contable). Fórmula: `precio = costo / (1 - utilidad/100)`. Ejemplo: costo $1, utilidad 30% → precio = 1 / 0.70 = $1.43 (no $1.30).
 - **precio**: precio de venta.
 - **existencia**, **stock_minimo**, **stock_maximo**: números.
 
@@ -28,7 +28,9 @@
 
 ## Implementación (backend)
 
-- **GET** `/inventario_maestro/`: Requiere `Authorization: Bearer <admin_token>`. Respuesta: `{ "productos": [ ... ] }`. Cada ítem tiene `_id`, `id`, `codigo`, `descripcion`, `marca`, `costo`, `utilidad`, `precio`, `existencia`, `stock_minimo`, `stock_maximo`. Si el documento tiene `laboratorio` y no `marca`, se expone como `marca`. Si tiene `precio_costo` y no `costo`, se expone como `costo`. La `utilidad` se calcula a partir de precio/costo si no está guardada.
-- **POST** `/inventario_maestro/`: Requiere token admin. Body JSON: `codigo` (requerido), `descripcion`, `marca`, `costo`, `utilidad`, `precio`, `existencia`, `stock_minimo`, `stock_maximo`. Si se envían `costo` y `utilidad`, se calcula `precio = costo * (1 + utilidad/100)`. Respuesta: el producto creado (objeto con `_id`, `id` y el resto de campos).
-- **PUT** `/inventario_maestro/{id}`: Requiere token admin. Body parcial con los mismos campos. Si se envían `costo` y `utilidad`, se actualiza `precio` con la misma fórmula. Respuesta: producto actualizado normalizado.
-- **GET** `/inventario_maestro/{id}`: Requiere token admin. Devuelve un solo producto con la misma forma normalizada.
+- **Fórmula de utilidad:** `precio = costo / (1 - utilidad/100)`. La utilidad es margen sobre precio (comercial/contable). En informes, la columna **Utilidad** se muestra como porcentaje (ej. 30%), no como monto en $.
+- **GET** `/inventario_maestro/`: Requiere `Authorization: Bearer <admin_token>`. Respuesta: `{ "productos": [ ... ] }`. Cada ítem incluye `_id`, `id`, `codigo`, `descripcion`, `marca`, `costo`, `utilidad` (%), `precio`, `existencia`, `stock_minimo`, `stock_maximo`, `foto_url`. La `utilidad` se calcula como margen: `(1 - costo/precio)*100` si no está guardada.
+- **POST** `/inventario_maestro/`: Requiere token admin. Body: `codigo` (requerido), `descripcion`, `marca`, `costo`, `utilidad`, `precio`, `existencia`, `stock_minimo`, `stock_maximo`, `foto_url` (opcional). Si se envían `costo` y `utilidad`, se calcula `precio = costo / (1 - utilidad/100)`. Respuesta: producto creado con `_id`, `id`.
+- **PUT** `/inventario_maestro/{id}`: Requiere token admin. Body parcial; misma fórmula para costo/utilidad/precio. Acepta `foto_url`, `foto`.
+- **GET** `/inventario_maestro/{id}`: Requiere token admin. Devuelve un producto con la misma forma normalizada.
+- **GET** `/inventario_maestro/{id}/foto`: Sin token admin (público). Si el producto tiene `foto_url` (o `foto`) con URL http(s), responde con redirect (302) a esa URL. Si no hay foto, 404.

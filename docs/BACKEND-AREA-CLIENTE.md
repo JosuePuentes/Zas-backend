@@ -36,9 +36,18 @@ El `access_token` se obtiene de **POST /login/** (login cliente). El backend pue
 
 ### GET /clientes/{rif} — Campos de respuesta
 
-Incluir al menos: `_id`, `rif`, `empresa`, `encargado`, `direccion`, `telefono`, `email`, `dias_credito`, `condiciones_comerciales`, `limite_credito`, `limite_consumido`, `descuento1`, `descuento2`, `descuento3`, `facturas_vencidas`, `activo`.
+Incluir al menos: `_id`, `rif`, `empresa`, `encargado`, `direccion`, `telefono`, `email`, `dias_credito`, `condiciones_comerciales`, `limite_credito`, `limite_consumido`, `descuento1`, `descuento2`, `descuento3`, **`descuento_comercial`**, **`descuento_pronto_pago`**, `facturas_vencidas`, `activo`.
 
-- **condiciones_comerciales:** texto o objeto que resuma condiciones (ej. "30 días de crédito, límite $X" o un string guardado en BD). Si no existe en BD, puede construirse a partir de `dias_credito` y `limite_credito`.
+- **condiciones_comerciales:** texto que resuma condiciones (ej. "30 días de crédito, límite $X"). Si no existe en BD, se construye desde `dias_credito` y `limite_credito`.
+- **descuento_comercial** (%): aplicado en catálogo cliente: `precio_final = precio × (1 - descuento_comercial/100)`.
+- **descuento_pronto_pago** (%): para listados e informes. Ver [BACKEND-CLIENTES-DESCUENTOS.md](BACKEND-CLIENTES-DESCUENTOS.md).
+
+---
+
+## Catálogo cliente (productos)
+
+- **Campos por producto:** Foto (o cuadro en blanco si no hay), código, descripción, marca, existencia, precio (sin mostrar costo). El precio mostrado puede ser el precio con descuento comercial: `precio_final = precio × (1 - descuento_comercial/100)`.
+- **Foto:** El frontend puede usar el campo `foto_url` (o `foto`) del producto, o llamar a **GET** `/inventario_maestro/{id}/foto`. Si hay URL, el backend responde con redirect (302) a la imagen; si no hay foto, 404.
 
 ### GET /cuentas-por-cobrar/cliente/{rif}
 

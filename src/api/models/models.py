@@ -35,6 +35,8 @@ class ClientUpdate(BaseModel):
     descuento1: Optional[float] = None
     descuento2: Optional[float] = None
     descuento3: Optional[float] = None
+    descuento_comercial: Optional[float] = None
+    descuento_pronto_pago: Optional[float] = None
 
 class ProductoInventario(BaseModel):
     codigo: str

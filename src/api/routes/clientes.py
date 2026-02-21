@@ -232,6 +232,8 @@ async def obtener_cliente_por_rif(rif: str, db: Database = Depends(get_db)):
             "descuento1": float(cliente.get("descuento1", 0)),
             "descuento2": float(cliente.get("descuento2", 0)),
             "descuento3": float(cliente.get("descuento3", 0)),
+            "descuento_comercial": float(cliente.get("descuento_comercial", 0)),
+            "descuento_pronto_pago": float(cliente.get("descuento_pronto_pago", 0)),
             "limite_credito": limite_credito,
             "limite_consumido": limite_consumido,
             "dias_credito": dias_credito,

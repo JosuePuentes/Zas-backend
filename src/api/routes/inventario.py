@@ -9,7 +9,7 @@ from ..auth.auth_utils import verify_admin_token
 from typing import List, Optional
 # Endpoint para consultar inventario maestro
 from fastapi import APIRouter, HTTPException, UploadFile, File, Body
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from ..models.models import ConvenioCarga, Convenio
 import math
 from fastapi.encoders import jsonable_encoder
@@ -20,7 +20,7 @@ import traceback
 import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '../../'))
-from utils.inventario_utils import calcular_precio_con_utilidad_40
+from utils.inventario_utils import calcular_precio_con_utilidad_40, precio_desde_costo_y_utilidad, utilidad_pct_desde_precio_y_costo
 
 
 
@@ -53,12 +53,14 @@ def _normalize_product_for_response(prod: dict) -> dict:
         precio = float(precio)
     except (TypeError, ValueError):
         precio = 0.0
+    # Utilidad como % sobre precio (margen comercial): (1 - costo/precio)*100
     utilidad = prod.get("utilidad")
-    if utilidad is None and costo and costo > 0:
-        utilidad = round((precio / costo - 1) * 100, 2)
+    if utilidad is None and precio and precio > 0:
+        utilidad = utilidad_pct_desde_precio_y_costo(precio, costo)
     if utilidad is None:
         utilidad = 0.0
     marca = prod.get("marca") if prod.get("marca") is not None else prod.get("laboratorio", "") or ""
+    foto_url = prod.get("foto_url") or prod.get("foto") or ""
     return {
         "_id": prod_id,
         "id": prod_id,
@@ -71,6 +73,7 @@ def _normalize_product_for_response(prod: dict) -> dict:
         "existencia": int(prod.get("existencia", 0)),
         "stock_minimo": prod.get("stock_minimo"),
         "stock_maximo": prod.get("stock_maximo"),
+        "foto_url": foto_url,
     }
 
 @router.get("/inventario/")
@@ -129,7 +132,7 @@ async def crear_producto_maestro(request: Request, body: dict = Body(...), db: D
     """
     Crear producto. Requiere Authorization: Bearer <admin_token>.
     Campos: codigo (requerido), descripcion, marca, costo, utilidad, precio, existencia, stock_minimo, stock_maximo.
-    Si se envían costo y utilidad, precio se calcula: precio = costo * (1 + utilidad/100). Devuelve el producto creado con _id e id.
+    Si se envían costo y utilidad, precio se calcula: precio = costo / (1 - utilidad/100) (utilidad comercial). Devuelve el producto creado con _id e id.
     """
     _get_admin_from_request(request)
     codigo = body.get("codigo")
@@ -150,7 +153,7 @@ async def crear_producto_maestro(request: Request, body: dict = Body(...), db: D
     except (TypeError, ValueError):
         utilidad_val = 0.0
     if costo is not None and utilidad is not None and costo_val > 0:
-        precio = costo_val * (1 + utilidad_val / 100)
+        precio = precio_desde_costo_y_utilidad(costo_val, utilidad_val)
     if precio is None:
         precio = 0.0
     try:
@@ -178,6 +181,10 @@ async def crear_producto_maestro(request: Request, body: dict = Body(...), db: D
         producto["stock_minimo"] = int(body["stock_minimo"])
     if "stock_maximo" in body and body["stock_maximo"] is not None:
         producto["stock_maximo"] = int(body["stock_maximo"])
+    if body.get("foto_url"):
+        producto["foto_url"] = str(body["foto_url"]).strip()
+    elif body.get("foto"):
+        producto["foto_url"] = str(body["foto"]).strip()
     resultado = inventario_collection.insert_one(producto)
     inserted = inventario_collection.find_one({"_id": resultado.inserted_id})
     inserted["_id"] = str(inserted["_id"])
@@ -379,6 +386,21 @@ async def obtener_productos_nuevos(db: Database = Depends(get_db)):
     return JSONResponse(content={"productos": productos})
 
 
+@router.get("/inventario_maestro/{id}/foto")
+async def obtener_foto_producto(id: str, db: Database = Depends(get_db)):
+    """Devuelve la URL de la foto del producto (redirect) o 404 si no hay foto. Para catálogo cliente."""
+    try:
+        prod = db["INVENTARIO_MAESTRO"].find_one({"_id": ObjectId(id)})
+    except Exception:
+        raise HTTPException(status_code=404, detail="Producto no encontrado")
+    if not prod:
+        raise HTTPException(status_code=404, detail="Producto no encontrado")
+    foto_url = prod.get("foto_url") or prod.get("foto")
+    if not foto_url or not str(foto_url).strip().startswith(("http://", "https://")):
+        raise HTTPException(status_code=404, detail="Sin foto para este producto")
+    return RedirectResponse(url=str(foto_url).strip(), status_code=302)
+
+
 # Endpoint para obtener un producto completo de inventario maestro por ObjectId
 @router.get("/inventario_maestro/{id}")
 async def obtener_producto_maestro(request: Request, id: str, db: Database = Depends(get_db)):
@@ -393,13 +415,13 @@ async def obtener_producto_maestro(request: Request, id: str, db: Database = Dep
 async def modificar_inventario_maestro(request: Request, id: str, body: dict = Body(...), db: Database = Depends(get_db)):
     """Actualizar producto. Requiere Authorization: Bearer <admin_token>. Acepta marca, costo, utilidad, precio, existencia, stock_minimo, stock_maximo, etc."""
     _get_admin_from_request(request)
-    campos_permitidos = {"codigo", "descripcion", "existencia", "precio", "dpto", "nacional", "laboratorio", "fv", "descuento1", "descuento2", "descuento3", "stock_minimo", "stock_maximo", "marca", "costo", "utilidad", "precio_costo"}
+    campos_permitidos = {"codigo", "descripcion", "existencia", "precio", "dpto", "nacional", "laboratorio", "fv", "descuento1", "descuento2", "descuento3", "stock_minimo", "stock_maximo", "marca", "costo", "utilidad", "precio_costo", "foto_url", "foto"}
     update_data = {k: v for k, v in body.items() if k in campos_permitidos}
     if "costo" in update_data and "utilidad" in update_data:
         try:
             c, u = float(update_data["costo"]), float(update_data["utilidad"])
-            if c > 0:
-                update_data["precio"] = c * (1 + u / 100)
+            if c > 0 and u < 100:
+                update_data["precio"] = precio_desde_costo_y_utilidad(c, u)
                 update_data["precio_costo"] = c
         except (TypeError, ValueError):
             pass
