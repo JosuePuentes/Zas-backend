@@ -5,6 +5,7 @@ from bson import ObjectId
 from fastapi import Request, status, Depends
 from pymongo.database import Database
 from ..database import get_db
+from ..auth.auth_utils import verify_admin_token
 from typing import List, Optional
 # Endpoint para consultar inventario maestro
 from fastapi import APIRouter, HTTPException, UploadFile, File, Body
@@ -24,6 +25,53 @@ from utils.inventario_utils import calcular_precio_con_utilidad_40
 
 
 router = APIRouter()
+
+
+def _get_admin_from_request(request: Request) -> dict:
+    """Exige Authorization: Bearer <admin_token>. Para uso en inventario_maestro."""
+    auth = request.headers.get("Authorization") or ""
+    if not auth.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Falta token de administrador")
+    return verify_admin_token(auth[7:].strip())
+
+
+def _normalize_product_for_response(prod: dict) -> dict:
+    """Devuelve producto con campos _id, codigo, descripcion, marca, costo, utilidad, precio, existencia, stock_minimo, stock_maximo."""
+    raw_id = prod.get("_id", "")
+    prod_id = str(raw_id) if raw_id else ""
+    costo = prod.get("costo") if "costo" in prod else prod.get("precio_costo")
+    if costo is None:
+        costo = 0.0
+    try:
+        costo = float(costo)
+    except (TypeError, ValueError):
+        costo = 0.0
+    precio = prod.get("precio")
+    if precio is None:
+        precio = 0.0
+    try:
+        precio = float(precio)
+    except (TypeError, ValueError):
+        precio = 0.0
+    utilidad = prod.get("utilidad")
+    if utilidad is None and costo and costo > 0:
+        utilidad = round((precio / costo - 1) * 100, 2)
+    if utilidad is None:
+        utilidad = 0.0
+    marca = prod.get("marca") if prod.get("marca") is not None else prod.get("laboratorio", "") or ""
+    return {
+        "_id": prod_id,
+        "id": prod_id,
+        "codigo": prod.get("codigo", ""),
+        "descripcion": prod.get("descripcion", ""),
+        "marca": marca,
+        "costo": round(costo, 2),
+        "utilidad": round(float(utilidad), 2),
+        "precio": round(precio, 2),
+        "existencia": int(prod.get("existencia", 0)),
+        "stock_minimo": prod.get("stock_minimo"),
+        "stock_maximo": prod.get("stock_maximo"),
+    }
 
 @router.get("/inventario/")
 async def obtener_inventario(db: Database = Depends(get_db)):
@@ -60,51 +108,81 @@ async def obtener_inventario(db: Database = Depends(get_db)):
         return JSONResponse(content={"message": "Error interno del servidor"}, status_code=500)
 
 @router.get("/inventario_maestro/")
-async def obtener_inventario_maestro(db: Database = Depends(get_db)):
-    proyeccion = {"codigo": 1, "descripcion": 1, "existencia": 1, "precio": 1, "dpto": 1, "nacional": 1, "laboratorio": 1, "fv": 1, "descuento1": 1, "descuento2": 1, "descuento3": 1, "stock_minimo": 1, "stock_maximo": 1}
-    productos = list(db["INVENTARIO_MAESTRO"].find({}, proyeccion))
-    for prod in productos:
-        prod["_id"] = str(prod["_id"])
-        if 'fv' in prod:
-            valor_fv = prod['fv']
-            if isinstance(valor_fv, float) and math.isnan(valor_fv):
-                prod['fv'] = None
-        prod.setdefault("stock_minimo", None)
-        prod.setdefault("stock_maximo", None)
-    return JSONResponse(content={"inventario_maestro": productos})
+async def obtener_inventario_maestro(request: Request, db: Database = Depends(get_db)):
+    """Listar productos. Requiere Authorization: Bearer <admin_token>. Devuelve { productos: [...] } con _id, codigo, descripcion, marca, costo, utilidad, precio, existencia, stock_minimo, stock_maximo."""
+    _get_admin_from_request(request)
+    coll = db["INVENTARIO_MAESTRO"]
+    # Excluir documentos que sean "inventario embebido" (nombre_productos + inventario)
+    cursor = coll.find({"codigo": {"$exists": True}})
+    productos = []
+    for prod in cursor:
+        if isinstance(prod.get("_id"), ObjectId):
+            prod["_id"] = str(prod["_id"])
+        if "fv" in prod and isinstance(prod.get("fv"), float) and math.isnan(prod["fv"]):
+            prod["fv"] = None
+        productos.append(_normalize_product_for_response(prod))
+    return JSONResponse(content={"productos": productos})
 
 
 @router.post("/inventario_maestro/", status_code=201)
-async def crear_producto_maestro(body: dict = Body(...), db: Database = Depends(get_db)):
+async def crear_producto_maestro(request: Request, body: dict = Body(...), db: Database = Depends(get_db)):
     """
-    Crear un producto en inventario maestro. Acepta stock_minimo y stock_maximo.
-    Campos: codigo (requerido), descripcion, existencia, precio, dpto, nacional, laboratorio, fv, descuento1, descuento2, descuento3, stock_minimo, stock_maximo.
+    Crear producto. Requiere Authorization: Bearer <admin_token>.
+    Campos: codigo (requerido), descripcion, marca, costo, utilidad, precio, existencia, stock_minimo, stock_maximo.
+    Si se envían costo y utilidad, precio se calcula: precio = costo * (1 + utilidad/100). Devuelve el producto creado con _id e id.
     """
+    _get_admin_from_request(request)
     codigo = body.get("codigo")
     if not codigo:
         raise HTTPException(status_code=400, detail="El campo codigo es requerido")
     inventario_collection = db["INVENTARIO_MAESTRO"]
     if inventario_collection.find_one({"codigo": str(codigo)}):
         raise HTTPException(status_code=400, detail="Ya existe un producto con ese código")
+    costo = body.get("costo")
+    utilidad = body.get("utilidad")
+    precio = body.get("precio")
+    try:
+        costo_val = float(costo) if costo is not None else 0.0
+    except (TypeError, ValueError):
+        costo_val = 0.0
+    try:
+        utilidad_val = float(utilidad) if utilidad is not None else 0.0
+    except (TypeError, ValueError):
+        utilidad_val = 0.0
+    if costo is not None and utilidad is not None and costo_val > 0:
+        precio = costo_val * (1 + utilidad_val / 100)
+    if precio is None:
+        precio = 0.0
+    try:
+        precio = float(precio)
+    except (TypeError, ValueError):
+        precio = 0.0
     producto = {
         "codigo": str(codigo),
         "descripcion": body.get("descripcion", ""),
+        "marca": body.get("marca", ""),
+        "costo": costo_val,
+        "utilidad": utilidad_val,
+        "precio": precio,
         "existencia": int(body.get("existencia", 0)),
-        "precio": float(body.get("precio", 0)),
         "dpto": body.get("dpto", ""),
         "nacional": body.get("nacional", ""),
-        "laboratorio": body.get("laboratorio", ""),
+        "laboratorio": body.get("marca", "") or body.get("laboratorio", ""),
         "fv": body.get("fv", ""),
         "descuento1": float(body.get("descuento1", 0)),
         "descuento2": float(body.get("descuento2", 0)),
         "descuento3": float(body.get("descuento3", 0)),
+        "precio_costo": costo_val,
     }
     if "stock_minimo" in body and body["stock_minimo"] is not None:
         producto["stock_minimo"] = int(body["stock_minimo"])
     if "stock_maximo" in body and body["stock_maximo"] is not None:
         producto["stock_maximo"] = int(body["stock_maximo"])
     resultado = inventario_collection.insert_one(producto)
-    return JSONResponse(content={"message": "Producto creado", "id": str(resultado.inserted_id)}, status_code=201)
+    inserted = inventario_collection.find_one({"_id": resultado.inserted_id})
+    inserted["_id"] = str(inserted["_id"])
+    inserted["id"] = inserted["_id"]
+    return JSONResponse(content=_normalize_product_for_response(inserted), status_code=201)
 
 
 @router.post("/subir_inventario/")
@@ -290,21 +368,34 @@ async def subir_inventario2(file: UploadFile = File(...), db: Database = Depends
 
 # Endpoint para obtener un producto completo de inventario maestro por ObjectId
 @router.get("/inventario_maestro/{id}")
-async def obtener_producto_maestro(id: str, db: Database = Depends(get_db)):
+async def obtener_producto_maestro(request: Request, id: str, db: Database = Depends(get_db)):
+    _get_admin_from_request(request)
     prod = db["INVENTARIO_MAESTRO"].find_one({"_id": ObjectId(id)})
     if not prod:
         raise HTTPException(status_code=404, detail="Producto no encontrado")
     prod["_id"] = str(prod["_id"])
-    return JSONResponse(content={"producto": prod})
+    return JSONResponse(content=_normalize_product_for_response(prod))
 
 @router.put("/inventario_maestro/{id}")
-async def modificar_inventario_maestro(id: str, body: dict = Body(...), db: Database = Depends(get_db)):
-    campos_permitidos = {"codigo", "descripcion", "existencia", "precio", "dpto", "nacional", "laboratorio", "fv", "descuento1", "descuento2", "descuento3", "stock_minimo", "stock_maximo"}
+async def modificar_inventario_maestro(request: Request, id: str, body: dict = Body(...), db: Database = Depends(get_db)):
+    """Actualizar producto. Requiere Authorization: Bearer <admin_token>. Acepta marca, costo, utilidad, precio, existencia, stock_minimo, stock_maximo, etc."""
+    _get_admin_from_request(request)
+    campos_permitidos = {"codigo", "descripcion", "existencia", "precio", "dpto", "nacional", "laboratorio", "fv", "descuento1", "descuento2", "descuento3", "stock_minimo", "stock_maximo", "marca", "costo", "utilidad", "precio_costo"}
     update_data = {k: v for k, v in body.items() if k in campos_permitidos}
+    if "costo" in update_data and "utilidad" in update_data:
+        try:
+            c, u = float(update_data["costo"]), float(update_data["utilidad"])
+            if c > 0:
+                update_data["precio"] = c * (1 + u / 100)
+                update_data["precio_costo"] = c
+        except (TypeError, ValueError):
+            pass
     result = db["INVENTARIO_MAESTRO"].update_one({"_id": ObjectId(id)}, {"$set": update_data})
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Producto no encontrado")
-    return {"message": "Producto actualizado", "id": id, "updated_fields": update_data}
+    updated = db["INVENTARIO_MAESTRO"].find_one({"_id": ObjectId(id)})
+    updated["_id"] = str(updated["_id"])
+    return JSONResponse(content=_normalize_product_for_response(updated))
 
 @router.get(
     "/convenios", 
