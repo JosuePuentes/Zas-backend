@@ -14,6 +14,8 @@ Este documento describe la API del backend (FastAPI en Render) para que el front
 | POST | `/api/chat` | Chatbot |
 | GET | `/inventario_maestro/` | Catálogo |
 | GET | `/pedidos/por_cliente/{rif}` | Pedidos del cliente |
+| GET | `/clientes/{rif}` | **(Cliente)** Ver mis datos (usar el `rif` del login) — para "Mi cuenta" |
+| PATCH | `/clientes/{rif}` | **(Cliente)** Actualizar mis datos (encargado, dirección, teléfono, email, etc.) |
 | POST | `/reclamos/cliente` | Crear reclamo |
 | GET | `/reclamos/cliente/{rif}` | Listar reclamos |
 | GET | `/clientes/solicitudes/pendientes` | (Admin) Solicitudes de nuevos clientes |

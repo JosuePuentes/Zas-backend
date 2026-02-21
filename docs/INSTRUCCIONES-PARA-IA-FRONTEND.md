@@ -53,8 +53,12 @@ Todas las peticiones al backend deben ir a:
 ```
 
 - Guardar `access_token` (localStorage/sessionStorage o estado) y usarlo en `Authorization: Bearer <token>` en las rutas del área cliente.
-- Usar `role === "client"` para redirigir al área de cliente (catálogo, pedidos, reclamos, etc.).
-- Usar `rif` para llamadas que lo pidan (p. ej. pedidos del cliente).
+- **Guardar también `rif`** en estado/sesión; es necesario para pedidos, reclamos y **Mi cuenta** (datos del cliente).
+- Usar `role === "client"` para redirigir al área de cliente (catálogo, pedidos, reclamos, **Mi cuenta**, etc.).
+- Usar `rif` para llamadas que lo pidan (p. ej. pedidos del cliente, ver/editar sus datos).
+
+**Menú del área cliente (siempre visible para el cliente, no depende de `modulos`):**  
+Catálogo, Pedidos, Reclamos, **Mi cuenta** (o "Datos del cliente"). Para ver y editar los datos propios: **GET** `/clientes/{rif}` y **PATCH** `/clientes/{rif}`. Detalle en [INSTRUCCIONES-FRONTEND-MODULO-CLIENTE-AREA-CLIENTE.md](INSTRUCCIONES-FRONTEND-MODULO-CLIENTE-AREA-CLIENTE.md).
 
 **Respuestas de error (mostrar el mensaje al usuario y no dar acceso):**
 
