@@ -208,6 +208,18 @@ async def obtener_cliente_por_rif(rif: str, db: Database = Depends(get_db)):
             pass
         # Facturas vencidas: si tiene dias_credito y pedidos antiguos sin pagar (simplificado: siempre False si no hay módulo facturas)
         tiene_facturas_vencidas = False
+        dias_credito = cliente.get("dias_credito", 0)
+        # Condiciones comerciales: texto para área cliente (BD o construido)
+        condiciones_comerciales = cliente.get("condiciones_comerciales")
+        if not condiciones_comerciales and (dias_credito or limite_credito):
+            parts = []
+            if dias_credito:
+                parts.append(f"{dias_credito} días de crédito")
+            if limite_credito:
+                parts.append(f"Límite ${limite_credito:,.2f}")
+            condiciones_comerciales = "; ".join(parts) if parts else ""
+        if condiciones_comerciales is None:
+            condiciones_comerciales = ""
         out = {
             "_id": cliente["_id"],
             "email": cliente.get("email", ""),
@@ -222,7 +234,8 @@ async def obtener_cliente_por_rif(rif: str, db: Database = Depends(get_db)):
             "descuento3": float(cliente.get("descuento3", 0)),
             "limite_credito": limite_credito,
             "limite_consumido": limite_consumido,
-            "dias_credito": cliente.get("dias_credito", 0),
+            "dias_credito": dias_credito,
+            "condiciones_comerciales": condiciones_comerciales,
             "facturas_vencidas": tiene_facturas_vencidas,
         }
         return JSONResponse(content=out, status_code=200)

@@ -366,6 +366,19 @@ async def subir_inventario2(file: UploadFile = File(...), db: Database = Depends
         print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.get("/inventario_maestro/nuevos")
+async def obtener_productos_nuevos(db: Database = Depends(get_db)):
+    """Productos nuevos (últimos incorporados). Para área cliente; no requiere token admin. Devuelve hasta 20 productos."""
+    coll = db["INVENTARIO_MAESTRO"]
+    cursor = coll.find({"codigo": {"$exists": True}}).sort("_id", -1).limit(20)
+    productos = []
+    for prod in cursor:
+        if isinstance(prod.get("_id"), ObjectId):
+            prod["_id"] = str(prod["_id"])
+        productos.append(_normalize_product_for_response(prod))
+    return JSONResponse(content={"productos": productos})
+
+
 # Endpoint para obtener un producto completo de inventario maestro por ObjectId
 @router.get("/inventario_maestro/{id}")
 async def obtener_producto_maestro(request: Request, id: str, db: Database = Depends(get_db)):

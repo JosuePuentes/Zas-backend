@@ -79,3 +79,24 @@ async def facturas_pagadas(db: Database = Depends(get_db)):
             "fecha_pago": p.get("fecha_pago"),
         })
     return JSONResponse(content=items, status_code=200)
+
+
+@router.get("/facturas/pagadas/cliente/{rif}")
+async def facturas_pagadas_cliente(rif: str, db: Database = Depends(get_db)):
+    """Facturas ya pagadas del cliente (área cliente). Authorization: Bearer <token_cliente> recomendado."""
+    pedidos_collection = db["PEDIDOS"]
+    pedidos = list(pedidos_collection.find({
+        "rif": rif,
+        "fecha_pago": {"$exists": True, "$ne": None},
+    }))
+    items = []
+    for p in pedidos:
+        items.append({
+            "numero": p.get("numero_factura") or str(p.get("_id", "")),
+            "cliente": p.get("cliente", ""),
+            "rif": p.get("rif", ""),
+            "monto": float(p.get("total", 0)),
+            "total": float(p.get("total", 0)),
+            "fecha_pago": p.get("fecha_pago"),
+        })
+    return JSONResponse(content=items, status_code=200)

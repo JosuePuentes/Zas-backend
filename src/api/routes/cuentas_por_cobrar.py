@@ -56,3 +56,23 @@ async def vencidas(db: Database = Depends(get_db)):
 async def total(db: Database = Depends(get_db)):
     t = sum(f["total"] for f in _get_facturas_cobrar(db) if not f.get("fecha_pago"))
     return JSONResponse(content={"total": round(t, 2)}, status_code=200)
+
+
+@router.get("/cuentas-por-cobrar/cliente/{rif}")
+async def cuentas_por_cobrar_cliente(rif: str, db: Database = Depends(get_db)):
+    """Facturas pendientes de pago del cliente (área cliente). Authorization: Bearer <token_cliente> recomendado."""
+    hoy = datetime.now().date()
+    out = []
+    for f in _get_facturas_cobrar(db):
+        if f.get("rif") != rif or f.get("fecha_pago"):
+            continue
+        try:
+            fv_dt = datetime.strptime(f["fecha_vencimiento"][:10], "%Y-%m-%d").date()
+            dias_restantes = (fv_dt - hoy).days
+            f["dias_restantes"] = dias_restantes
+            if fv_dt < hoy:
+                f["dias_vencidos"] = (hoy - fv_dt).days
+        except Exception:
+            pass
+        out.append(f)
+    return JSONResponse(content=out, status_code=200)
