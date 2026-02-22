@@ -164,15 +164,20 @@ async def update_client(rif: str, client: ClientUpdate, db: Database = Depends(g
     Actualizar cliente. Body parcial: empresa, encargado, direccion, telefono, email, password (opcional),
     dias_credito, limite_credito, descuento_comercial, descuento_pronto_pago, etc. El RIF no se puede cambiar (es el identificador en la URL).
     Usado por admin (Editar cliente) y por cliente (Mi cuenta). Si se envía password, se hashea antes de guardar.
+    Acepta RIF en la URL en formato corto (ej. 24241240) o completo (J-24241240-1); se busca por coincidencia.
     """
     clients_collection = db["CLIENTES"]
+    cliente = _find_cliente_by_rif(clients_collection, rif)
+    if not cliente:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado")
+    rif_real = cliente["rif"]
     update_data = client.dict(exclude_none=True)
     update_data.pop("rif", None)  # Nunca permitir cambiar el RIF
     if "password" in update_data and update_data["password"]:
         update_data["password"] = get_password_hash(update_data["password"])
     if not update_data:
         return {"message": "No se enviaron campos para actualizar"}
-    success, result = update_document(clients_collection, {"rif": rif}, update_data)
+    success, result = update_document(clients_collection, {"rif": rif_real}, update_data)
     if success:
         return {"message": result}
     raise HTTPException(status_code=404, detail=result)
@@ -200,19 +205,20 @@ async def obtener_clientes(db: Database = Depends(get_db)):
 
 @router.get("/clientes/{rif}")
 async def obtener_cliente_por_rif(rif: str, db: Database = Depends(get_db)):
-    """Detalle del cliente. Incluye limite_credito, limite_consumido, facturas_vencidas para validación admin."""
+    """Detalle del cliente. Incluye limite_credito, limite_consumido, facturas_vencidas para validación admin. Acepta RIF corto (24241240) o completo (J-24241240-1)."""
     try:
         clients_collection = db["CLIENTES"]
         pedidos_collection = db.get("PEDIDOS") or db["PEDIDOS"]
-        cliente = clients_collection.find_one({"rif": rif})
+        cliente = _find_cliente_by_rif(clients_collection, rif)
         if not cliente:
             return JSONResponse(content={"error": "Cliente no encontrado"}, status_code=404)
+        rif_real = cliente["rif"]
         cliente["_id"] = str(cliente["_id"])
         limite_credito = float(cliente.get("limite_credito", 0))
         # Limite consumido: suma de totales de pedidos facturados no pagados (simplificado: pedidos en estado para_facturar/facturando/enviado/entregado)
         limite_consumido = 0.0
         try:
-            pedidos_cliente = list(pedidos_collection.find({"rif": rif, "estado": {"$in": ["para_facturar", "facturando", "enviado", "entregado"]}}))
+            pedidos_cliente = list(pedidos_collection.find({"rif": rif_real, "estado": {"$in": ["para_facturar", "facturando", "enviado", "entregado"]}}))
             limite_consumido = sum(float(p.get("total", 0)) for p in pedidos_cliente)
         except Exception:
             pass
@@ -255,6 +261,28 @@ async def obtener_cliente_por_rif(rif: str, db: Database = Depends(get_db)):
         print(f"Error al obtener cliente por RIF: {str(e)}")
         print(f"Traceback: {traceback.format_exc()}")
         return JSONResponse(content={"error": f"Error al obtener el cliente: {str(e)}"}, status_code=500)
+
+def _rif_variantes(rif: str):
+    """Genera variantes comunes del RIF para búsqueda (ej. 24241240 -> J-24241240-1, etc.)."""
+    rif_limpio = (rif or "").strip().replace("-", "").replace(".", "").upper()
+    if not rif_limpio:
+        return [rif]
+    variantes = [rif, rif_limpio]
+    if len(rif_limpio) == 8 and rif_limpio.isdigit():
+        variantes.extend([f"J-{rif_limpio}-1", f"J-{rif_limpio}", f"G-{rif_limpio}-1", f"V-{rif_limpio}-1"])
+    elif len(rif_limpio) >= 8:
+        variantes.append(f"J-{rif_limpio[:8]}-{rif_limpio[-1]}" if len(rif_limpio) >= 9 else f"J-{rif_limpio}-1")
+    return list(dict.fromkeys(variantes))  # sin duplicados, orden preservado
+
+
+def _find_cliente_by_rif(collection, rif: str):
+    """Busca un cliente por RIF (exacto o variantes J-xxx-x, etc.). Retorna el doc o None."""
+    for v in _rif_variantes(rif):
+        doc = collection.find_one({"rif": v})
+        if doc:
+            return doc
+    return None
+
 
 def update_document(collection, filter_query, update_data):
     result = collection.update_one(filter_query, {"$set": update_data})
