@@ -440,18 +440,23 @@ async def obtener_productos_nuevos(db: Database = Depends(get_db)):
 
 
 @router.get("/inventario_maestro/{id}/foto")
-async def obtener_foto_producto(id: str, db: Database = Depends(get_db)):
-    """Devuelve la URL de la foto del producto (redirect) o 404 si no hay foto. Para catálogo cliente."""
+async def obtener_foto_producto(request: Request, id: str, db: Database = Depends(get_db)):
+    """Devuelve la foto del producto (redirect a URL externa o a /archivos/... del mismo servidor). 404 si no hay foto."""
     try:
         prod = db["INVENTARIO_MAESTRO"].find_one({"_id": ObjectId(id)})
     except Exception:
         raise HTTPException(status_code=404, detail="Producto no encontrado")
     if not prod:
         raise HTTPException(status_code=404, detail="Producto no encontrado")
-    foto_url = prod.get("foto_url") or prod.get("foto")
-    if not foto_url or not str(foto_url).strip().startswith(("http://", "https://")):
+    foto_url = (prod.get("foto_url") or prod.get("foto") or "").strip()
+    if not foto_url:
         raise HTTPException(status_code=404, detail="Sin foto para este producto")
-    return RedirectResponse(url=str(foto_url).strip(), status_code=302)
+    if foto_url.startswith(("http://", "https://")):
+        return RedirectResponse(url=foto_url, status_code=302)
+    if foto_url.startswith("/"):
+        base = str(request.base_url).rstrip("/")
+        return RedirectResponse(url=f"{base}{foto_url}", status_code=302)
+    raise HTTPException(status_code=404, detail="Sin foto para este producto")
 
 
 # Endpoint para obtener un producto completo de inventario maestro por ObjectId
@@ -464,12 +469,62 @@ async def obtener_producto_maestro(request: Request, id: str, db: Database = Dep
     prod["_id"] = str(prod["_id"])
     return JSONResponse(content=_normalize_product_for_response(prod))
 
-@router.put("/inventario_maestro/{id}")
-async def modificar_inventario_maestro(request: Request, id: str, body: dict = Body(...), db: Database = Depends(get_db)):
-    """Actualizar producto. Requiere Authorization: Bearer <admin_token>. Acepta marca, costo, utilidad, precio, existencia, stock_minimo, stock_maximo, etc."""
-    _get_admin_from_request(request)
+def _get_update_data_from_body(body: dict) -> dict:
+    """Extrae campos permitidos para actualizar producto."""
     campos_permitidos = {"codigo", "descripcion", "existencia", "precio", "dpto", "nacional", "laboratorio", "fv", "descuento1", "descuento2", "descuento3", "stock_minimo", "stock_maximo", "marca", "costo", "utilidad", "precio_costo", "foto_url", "foto"}
-    update_data = {k: v for k, v in body.items() if k in campos_permitidos}
+    return {k: v for k, v in body.items() if k in campos_permitidos}
+
+
+@router.put("/inventario_maestro/{id}")
+async def modificar_inventario_maestro(request: Request, id: str, db: Database = Depends(get_db)):
+    """Actualizar producto. Requiere Authorization: Bearer <admin_token>. Acepta JSON o multipart/form-data con campo 'foto' (archivo) para actualizar la imagen."""
+    _get_admin_from_request(request)
+    content_type = (request.headers.get("Content-Type") or "").lower()
+    body = {}
+    file_foto = None
+    if "multipart/form-data" in content_type:
+        form = await request.form()
+        file_foto = form.get("foto")
+        if file_foto and getattr(file_foto, "filename", None):
+            pass
+        else:
+            file_foto = None
+        numeric_keys = {"existencia", "precio", "costo", "utilidad", "descuento1", "descuento2", "descuento3", "stock_minimo", "stock_maximo"}
+        for key in form.keys():
+            if key == "foto":
+                continue
+            val = form.get(key)
+            if val is None or (hasattr(val, "filename") and val.filename):
+                continue
+            if key in numeric_keys and val != "":
+                try:
+                    if key == "existencia" or key == "stock_minimo" or key == "stock_maximo":
+                        body[key] = int(float(val))
+                    else:
+                        body[key] = float(val)
+                except (ValueError, TypeError):
+                    body[key] = val
+            else:
+                body[key] = val
+    else:
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+    update_data = _get_update_data_from_body(body)
+    if file_foto and hasattr(file_foto, "read"):
+        upload_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "uploads", "productos"))
+        os.makedirs(upload_dir, exist_ok=True)
+        ext = (file_foto.filename or "").split(".")[-1] if getattr(file_foto, "filename", None) else "jpg"
+        if ext not in ("jpg", "jpeg", "png", "gif", "webp"):
+            ext = "jpg"
+        filename = f"{id}.{ext}"
+        filepath = os.path.join(upload_dir, filename)
+        contents = await file_foto.read()
+        with open(filepath, "wb") as f:
+            f.write(contents)
+        update_data["foto_url"] = f"/archivos/productos/{filename}"
+        update_data["foto"] = update_data["foto_url"]
     if "costo" in update_data and "utilidad" in update_data:
         try:
             c, u = float(update_data["costo"]), float(update_data["utilidad"])
@@ -478,10 +533,13 @@ async def modificar_inventario_maestro(request: Request, id: str, body: dict = B
                 update_data["precio_costo"] = c
         except (TypeError, ValueError):
             pass
-    result = db["INVENTARIO_MAESTRO"].update_one({"_id": ObjectId(id)}, {"$set": update_data})
-    if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Producto no encontrado")
+    if update_data:
+        result = db["INVENTARIO_MAESTRO"].update_one({"_id": ObjectId(id)}, {"$set": update_data})
+        if result.matched_count == 0:
+            raise HTTPException(status_code=404, detail="Producto no encontrado")
     updated = db["INVENTARIO_MAESTRO"].find_one({"_id": ObjectId(id)})
+    if not updated:
+        raise HTTPException(status_code=404, detail="Producto no encontrado")
     updated["_id"] = str(updated["_id"])
     return JSONResponse(content=_normalize_product_for_response(updated))
 

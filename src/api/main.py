@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from .routes.clientes import router as clientes_router
 from .routes.pedidos import router as pedidos_router
 from .routes.inventario import router as inventario_router
@@ -90,6 +91,11 @@ app.include_router(finanzas_router)
 app.include_router(cierre_diario_router)
 app.include_router(bcv_router, tags=["BCV"])
 app.include_router(area_cliente_router, tags=["Área cliente"])
+
+# Archivos estáticos (fotos de productos subidas por PUT /inventario_maestro/{id})
+_uploads_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "uploads"))
+os.makedirs(os.path.join(_uploads_path, "productos"), exist_ok=True)
+app.mount("/archivos", StaticFiles(directory=_uploads_path), name="archivos")
 
 from .models.models import (
     Client, ProductoInventario, UserRegister, UserLogin, UserAdminRegister, AdminLogin,
