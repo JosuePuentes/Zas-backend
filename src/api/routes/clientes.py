@@ -169,7 +169,7 @@ async def update_client(rif: str, client: ClientUpdate, db: Database = Depends(g
     clients_collection = db["CLIENTES"]
     cliente = _find_cliente_by_rif(clients_collection, rif)
     if not cliente:
-        raise HTTPException(status_code=404, detail="Cliente no encontrado")
+        raise HTTPException(status_code=404, detail="Cliente no encontrado con ese RIF")
     rif_real = cliente["rif"]
     update_data = client.dict(exclude_none=True)
     update_data.pop("rif", None)  # Nunca permitir cambiar el RIF
@@ -185,8 +185,11 @@ async def update_client(rif: str, client: ClientUpdate, db: Database = Depends(g
 @router.delete("/clientes/{rif}")
 async def delete_client(rif: str, db: Database = Depends(get_db)):
     clients_collection = db["CLIENTES"]
-    # Requiere implementación de delete_document
-    success, result = delete_document(clients_collection, {"rif": rif})
+    cliente = _find_cliente_by_rif(clients_collection, rif)
+    if not cliente:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado con ese RIF")
+    rif_real = cliente["rif"]
+    success, result = delete_document(clients_collection, {"rif": rif_real})
     if success:
         return {"message": result}
     raise HTTPException(status_code=404, detail=result)
@@ -211,7 +214,7 @@ async def obtener_cliente_por_rif(rif: str, db: Database = Depends(get_db)):
         pedidos_collection = db.get("PEDIDOS") or db["PEDIDOS"]
         cliente = _find_cliente_by_rif(clients_collection, rif)
         if not cliente:
-            return JSONResponse(content={"error": "Cliente no encontrado"}, status_code=404)
+            return JSONResponse(content={"error": "Cliente no encontrado con ese RIF"}, status_code=404)
         rif_real = cliente["rif"]
         cliente["_id"] = str(cliente["_id"])
         limite_credito = float(cliente.get("limite_credito", 0))
@@ -276,10 +279,15 @@ def _rif_variantes(rif: str):
 
 
 def _find_cliente_by_rif(collection, rif: str):
-    """Busca un cliente por RIF (exacto o variantes J-xxx-x, etc.). Retorna el doc o None."""
+    """Busca un cliente por RIF (exacto, variantes J-xxx-x, o por núcleo numérico). Retorna el doc o None."""
     for v in _rif_variantes(rif):
         doc = collection.find_one({"rif": v})
         if doc:
+            return doc
+    # Fallback: buscar por núcleo numérico (ej. 24241240 encuentra J-24241240-1)
+    rif_solo_numeros = re.sub(r"[^0-9]", "", str(rif or ""))
+    if len(rif_solo_numeros) >= 6:
+        for doc in collection.find({"rif": {"$regex": re.escape(rif_solo_numeros)}}):
             return doc
     return None
 
