@@ -1,18 +1,19 @@
-# Instrucciones para el frontend – Catálogo en área cliente
+# Instrucciones para el frontend – Catálogo (público y área cliente)
 
-Usar estas instrucciones en el frontend (o con la IA del frontend) para el catálogo de productos en el **área cliente** (panel del cliente logueado).
+Usar estas instrucciones en el frontend (o con la IA del frontend) para cualquier catálogo de productos: **catálogo público** (ruta `/catalogo`, sin login) y **área cliente** (panel del cliente logueado).
 
 ---
 
-## 1. Endpoint del catálogo
+## 1. Endpoint del catálogo: usar siempre GET /catalogo/
 
-En el área cliente **no** se debe llamar a `GET /inventario_maestro/` (ese endpoint exige token de **admin** y devuelve 401 con token de cliente).
+**GET /inventario_maestro/** exige token de **admin**. Si no se envía token (catálogo público) o se envía token de cliente, el backend responde **401 Unauthorized**. Por eso **no** se debe usar para el catálogo.
 
 **Usar en su lugar:**
 
 - **GET** `{baseUrl}/catalogo/`
 
-No requiere token de administrador. Puede enviarse el token del cliente en `Authorization: Bearer <token>` o no enviar token; el backend devuelve el catálogo en ambos casos.
+- **No requiere token:** Puede usarse en la página pública (CatalogoPage en `/catalogo`) sin enviar `Authorization`. También funciona con token de cliente en el área cliente.
+- **Catálogo público (CatalogoPage):** Si actualmente usa `GET /inventario_maestro/` y no envía token, hay que cambiarlo a **GET /catalogo/** para evitar el 401.
 
 **Ejemplo:** `GET https://droclven-back.onrender.com/catalogo/`
 
@@ -60,4 +61,4 @@ No mostrar costo ni utilidad (el backend no los envía en este endpoint).
 
 ## 4. Resumen para copiar/pegar
 
-> **Catálogo área cliente:** Llamar a **GET /catalogo/** (no a /inventario_maestro/). Respuesta: `{ "productos": [ ... ] }`. Cada producto tiene: _id, codigo, descripcion, marca, foto/foto_url, precio, descuento (%), precio_con_descuento, existencia. Mostrar foto (o placeholder si no hay), código, descripción, marca, precio, descuento y precio con descuento, y existencia. No se muestra costo.
+> **Catálogo (público y área cliente):** Llamar a **GET /catalogo/** (no a /inventario_maestro/). El backend exige token admin en /inventario_maestro/, por eso CatalogoPage (catálogo público en `/catalogo`) debe usar **GET /catalogo/** y no enviar token. Respuesta: `{ "productos": [ ... ] }`. Cada producto: _id, codigo, descripcion, marca, foto/foto_url, precio, descuento (%), precio_con_descuento, existencia. No se muestra costo.
