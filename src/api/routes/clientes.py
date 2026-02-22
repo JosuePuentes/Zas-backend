@@ -160,9 +160,19 @@ async def get_all_clients_manual_conversion(db: Database = Depends(get_db)):
 
 @router.patch("/clientes/{rif}")
 async def update_client(rif: str, client: ClientUpdate, db: Database = Depends(get_db)):
+    """
+    Actualizar cliente. Body parcial: empresa, encargado, direccion, telefono, email, password (opcional),
+    dias_credito, limite_credito, descuento_comercial, descuento_pronto_pago, etc. El RIF no se puede cambiar (es el identificador en la URL).
+    Usado por admin (Editar cliente) y por cliente (Mi cuenta). Si se envía password, se hashea antes de guardar.
+    """
     clients_collection = db["CLIENTES"]
-    # Requiere implementación de update_document
-    success, result = update_document(clients_collection, {"rif": rif}, client.dict())
+    update_data = client.dict(exclude_none=True)
+    update_data.pop("rif", None)  # Nunca permitir cambiar el RIF
+    if "password" in update_data and update_data["password"]:
+        update_data["password"] = get_password_hash(update_data["password"])
+    if not update_data:
+        return {"message": "No se enviaron campos para actualizar"}
+    success, result = update_document(clients_collection, {"rif": rif}, update_data)
     if success:
         return {"message": result}
     raise HTTPException(status_code=404, detail=result)
