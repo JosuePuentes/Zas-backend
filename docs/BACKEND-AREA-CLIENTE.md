@@ -46,8 +46,18 @@ Incluir al menos: `_id`, `rif`, `empresa`, `encargado`, `direccion`, `telefono`,
 
 ## Catálogo cliente (productos)
 
-- **Campos por producto:** Foto (o cuadro en blanco si no hay), código, descripción, marca, existencia, precio (sin mostrar costo). El precio mostrado puede ser el precio con descuento comercial: `precio_final = precio × (1 - descuento_comercial/100)`.
-- **Foto:** El frontend puede usar el campo `foto_url` (o `foto`) del producto, o llamar a **GET** `/inventario_maestro/{id}/foto`. Si hay URL, el backend responde con redirect (302) a la imagen; si no hay foto, 404.
+- **Endpoint:** **GET /catalogo/** — No requiere token admin (puede usarse con token cliente o sin token). Respuesta: `{ "productos": [ ... ] }`.
+- **Campos por producto (solo lo necesario para el catálogo):**
+  - **foto** / **foto_url**: URL de la foto (vacío si no hay).
+  - **codigo**: Código del producto.
+  - **descripcion**: Descripción.
+  - **marca**: Marca (o laboratorio si no hay marca).
+  - **precio**: Precio base.
+  - **descuento**: Descuento en % (ej. 10 = 10%).
+  - **precio_con_descuento**: Precio aplicando descuento (`precio × (1 - descuento/100)`).
+  - **existencia**: Stock disponible.
+  - **_id**: ID del producto (para enlace a foto o detalle).
+- No se muestran costo ni utilidad. Para la foto, el frontend usa `foto`/`foto_url` o **GET** `/inventario_maestro/{id}/foto` (redirect a la imagen; 404 si no hay).
 
 ### GET /cuentas-por-cobrar/cliente/{rif}
 

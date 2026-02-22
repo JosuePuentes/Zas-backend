@@ -76,6 +76,59 @@ def _normalize_product_for_response(prod: dict) -> dict:
         "foto_url": foto_url,
     }
 
+
+def _normalize_product_for_catalogo(prod: dict) -> dict:
+    """Para área cliente: foto, codigo, descripcion, marca, precio, descuento (%), precio_con_descuento, existencia. Sin costo ni utilidad."""
+    raw_id = prod.get("_id", "")
+    prod_id = str(raw_id) if raw_id else ""
+    precio = prod.get("precio")
+    if precio is None:
+        precio = 0.0
+    try:
+        precio = float(precio)
+    except (TypeError, ValueError):
+        precio = 0.0
+    descuento = prod.get("descuento1")
+    if descuento is None:
+        descuento = 0.0
+    try:
+        descuento = float(descuento)
+    except (TypeError, ValueError):
+        descuento = 0.0
+    if descuento > 100:
+        descuento = 100
+    precio_con_descuento = round(precio * (1 - descuento / 100), 2) if descuento else round(precio, 2)
+    foto_url = prod.get("foto_url") or prod.get("foto") or ""
+    marca = prod.get("marca") if prod.get("marca") is not None else (prod.get("laboratorio") or "")
+    return {
+        "_id": prod_id,
+        "codigo": prod.get("codigo", ""),
+        "descripcion": prod.get("descripcion", ""),
+        "marca": marca,
+        "foto": foto_url,
+        "foto_url": foto_url,
+        "precio": round(precio, 2),
+        "descuento": round(descuento, 2),
+        "precio_con_descuento": precio_con_descuento,
+        "existencia": int(prod.get("existencia", 0)),
+    }
+
+
+@router.get("/catalogo/")
+async def obtener_catalogo(db: Database = Depends(get_db)):
+    """Catálogo para área cliente. No requiere token admin. Devuelve { productos: [...] } con foto, codigo, descripcion, precio, descuento, precio_con_descuento, existencia."""
+    coll = db["INVENTARIO_MAESTRO"]
+    cursor = coll.find({"codigo": {"$exists": True}})
+    productos = []
+    for prod in cursor:
+        if isinstance(prod.get("_id"), ObjectId):
+            prod["_id"] = str(prod["_id"])
+        if "fv" in prod and isinstance(prod.get("fv"), float) and math.isnan(prod["fv"]):
+            prod["fv"] = None
+        productos.append(_normalize_product_for_catalogo(prod))
+    return JSONResponse(content={"productos": productos})
+
+
 @router.get("/inventario/")
 async def obtener_inventario(db: Database = Depends(get_db)):
     try:
