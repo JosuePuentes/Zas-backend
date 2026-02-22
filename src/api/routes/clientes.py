@@ -6,9 +6,33 @@ from pymongo.database import Database
 from ..database import get_db
 from ..models.models import Client, ClientUpdate, AprobarClienteBody, RechazarClienteBody
 from ..auth.auth_utils import get_password_hash
+import re
 import traceback
 
 router = APIRouter()
+
+
+def _safe_float(val, default: float = 0.0) -> float:
+    """Convierte a float de forma segura para valores venidos de MongoDB."""
+    if val is None:
+        return default
+    try:
+        if isinstance(val, (int, float)):
+            return float(val)
+        s = str(val).strip().replace(",", ".")
+        return float(s) if s else default
+    except (ValueError, TypeError):
+        return default
+
+
+def _safe_int(val, default: int = 0) -> int:
+    """Convierte a int de forma segura."""
+    if val is None:
+        return default
+    try:
+        return int(val) if not isinstance(val, (int, float)) else int(val)
+    except (ValueError, TypeError):
+        return default
 
 @router.post("/clientes/", response_model=Client, status_code=201)
 async def create_client(client: Client, db: Database = Depends(get_db)):
@@ -215,20 +239,17 @@ async def obtener_cliente_por_rif(rif: str, db: Database = Depends(get_db)):
         cliente = _find_cliente_by_rif(clients_collection, rif)
         if not cliente:
             return JSONResponse(content={"error": "Cliente no encontrado con ese RIF"}, status_code=404)
-        rif_real = cliente["rif"]
+        rif_real = str(cliente.get("rif") or "")
         cliente["_id"] = str(cliente["_id"])
-        limite_credito = float(cliente.get("limite_credito", 0))
-        # Limite consumido: suma de totales de pedidos facturados no pagados (simplificado: pedidos en estado para_facturar/facturando/enviado/entregado)
+        limite_credito = _safe_float(cliente.get("limite_credito"), 0.0)
         limite_consumido = 0.0
         try:
             pedidos_cliente = list(pedidos_collection.find({"rif": rif_real, "estado": {"$in": ["para_facturar", "facturando", "enviado", "entregado"]}}))
-            limite_consumido = sum(float(p.get("total", 0)) for p in pedidos_cliente)
+            limite_consumido = sum(_safe_float(p.get("total"), 0.0) for p in pedidos_cliente)
         except Exception:
             pass
-        # Facturas vencidas: si tiene dias_credito y pedidos antiguos sin pagar (simplificado: siempre False si no hay módulo facturas)
         tiene_facturas_vencidas = False
-        dias_credito = cliente.get("dias_credito", 0)
-        # Condiciones comerciales: texto para área cliente (BD o construido)
+        dias_credito = _safe_int(cliente.get("dias_credito"), 0)
         condiciones_comerciales = cliente.get("condiciones_comerciales")
         if not condiciones_comerciales and (dias_credito or limite_credito):
             parts = []
@@ -239,25 +260,30 @@ async def obtener_cliente_por_rif(rif: str, db: Database = Depends(get_db)):
             condiciones_comerciales = "; ".join(parts) if parts else ""
         if condiciones_comerciales is None:
             condiciones_comerciales = ""
+        act = cliente.get("activo", True)
+        if act is not None and not isinstance(act, bool):
+            act = str(act).lower() in ("1", "true", "yes", "si", "sí")
+        elif act is None:
+            act = True
         out = {
-            "_id": cliente["_id"],
-            "email": cliente.get("email", ""),
-            "rif": cliente.get("rif", ""),
-            "empresa": cliente.get("empresa", ""),
-            "encargado": cliente.get("encargado", ""),
-            "direccion": cliente.get("direccion", ""),
-            "telefono": cliente.get("telefono", ""),
-            "activo": cliente.get("activo", True),
-            "descuento1": float(cliente.get("descuento1", 0)),
-            "descuento2": float(cliente.get("descuento2", 0)),
-            "descuento3": float(cliente.get("descuento3", 0)),
-            "descuento_comercial": float(cliente.get("descuento_comercial", 0)),
-            "descuento_pronto_pago": float(cliente.get("descuento_pronto_pago", 0)),
+            "_id": str(cliente["_id"]),
+            "email": str(cliente.get("email") or ""),
+            "rif": str(cliente.get("rif") or ""),
+            "empresa": str(cliente.get("empresa") or ""),
+            "encargado": str(cliente.get("encargado") or ""),
+            "direccion": str(cliente.get("direccion") or ""),
+            "telefono": str(cliente.get("telefono") or ""),
+            "activo": bool(act),
+            "descuento1": _safe_float(cliente.get("descuento1"), 0.0),
+            "descuento2": _safe_float(cliente.get("descuento2"), 0.0),
+            "descuento3": _safe_float(cliente.get("descuento3"), 0.0),
+            "descuento_comercial": _safe_float(cliente.get("descuento_comercial"), 0.0),
+            "descuento_pronto_pago": _safe_float(cliente.get("descuento_pronto_pago"), 0.0),
             "limite_credito": limite_credito,
             "limite_consumido": limite_consumido,
             "dias_credito": dias_credito,
-            "condiciones_comerciales": condiciones_comerciales,
-            "facturas_vencidas": tiene_facturas_vencidas,
+            "condiciones_comerciales": str(condiciones_comerciales or ""),
+            "facturas_vencidas": bool(tiene_facturas_vencidas),
         }
         return JSONResponse(content=out, status_code=200)
     except Exception as e:

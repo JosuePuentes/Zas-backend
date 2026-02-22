@@ -91,13 +91,13 @@ class ProductoPedido(BaseModel):
     codigo: str
     descripcion: str
     precio: float
-    descuento1: float
-    descuento2: float
-    descuento3: float
-    descuento4: float
+    descuento1: float = 0
+    descuento2: float = 0
+    descuento3: float = 0
+    descuento4: float = 0
     cantidad_pedida: int
-    cantidad_encontrada: int
-    subtotal: float
+    cantidad_encontrada: int = 0
+    subtotal: float = 0
     cantidad: int = 0
     cantidad_pendiente: int = 0
     existencia: Optional[int] = None
@@ -114,9 +114,9 @@ class ProductoPedido(BaseModel):
 class PedidoResumen(BaseModel):
     cliente: str
     rif: str
-    observacion: str
+    observacion: Optional[str] = ""
     total: float
-    subtotal: float
+    subtotal: float = 0
     productos: list[ProductoPedido]
     estado: Optional[str] = None
     validado: Optional[bool] = False
